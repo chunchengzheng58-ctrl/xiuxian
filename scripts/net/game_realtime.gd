@@ -4,6 +4,10 @@ extends Node
 signal snapshot_received(snapshot: Dictionary)
 signal snapshot_invalidated
 signal connection_changed(state: String)
+signal duel_state_received(state: Dictionary)
+signal duel_error_received(match_id: String, code: String, message: String)
+signal expedition_state_received(state: Dictionary)
+signal expedition_error_received(run_id: String, code: String, message: String)
 const Result = preload("res://scripts/kernel/result.gd")
 const Contracts = preload("res://scripts/kernel/contracts.gd")
 var _api: Node
@@ -120,6 +124,20 @@ func _receive(text: String) -> void:
 		return
 	if message.get("type") == "pong":
 		return
+	if message.get("type") == "duel_state":
+		if message.get("data") is Dictionary:
+			duel_state_received.emit(message.data)
+		return
+	if message.get("type") == "duel_error":
+		duel_error_received.emit(str(message.get("match_id", "")), str(message.get("code", "")), str(message.get("message", "")))
+		return
+	if message.get("type") == "expedition_state":
+		if message.get("data") is Dictionary:
+			expedition_state_received.emit(message.data)
+		return
+	if message.get("type") == "expedition_error":
+		expedition_error_received.emit(str(message.get("run_id", "")), str(message.get("code", "")), str(message.get("message", "")))
+		return
 	if not Contracts.matches(message.get("revision"), "integer") or message.revision < 0:
 		_schedule_retry()
 		return
@@ -139,6 +157,12 @@ func _receive(text: String) -> void:
 	else:
 		if message.get("type") != "state_changed":
 			_schedule_retry()
+
+func send_duel(packet: Dictionary) -> bool:
+	return _connected and _peer != null and _peer.send_text(JSON.stringify(packet)) == OK
+
+func send_expedition(packet: Dictionary) -> bool:
+	return _connected and _peer != null and _peer.send_text(JSON.stringify(packet)) == OK
 
 func _schedule_retry() -> void:
 	if _peer != null:

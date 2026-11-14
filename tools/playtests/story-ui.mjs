@@ -1,0 +1,53 @@
+import {spawn} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import assert from 'node:assert/strict';
+const scripts=fileURLToPath(new URL('.',import.meta.url));
+const project=process.argv[2]??resolve(scripts,'../..');
+const output=process.argv[3]??resolve(project,'../../outputs/story-preview');
+const work=join(project,'work/playtests/story-'+randomUUID());
+mkdirSync(join(work,'temp'),{recursive:true});mkdirSync(output,{recursive:true});
+process.env.TEMP=join(work,'temp');process.env.TMP=join(work,'temp');
+const {buildApp}=await import(pathToFileURL(join(project,'server/dist/src/app.js')));
+const server=await buildApp({worker:false,randomInt:()=>0});
+try{
+ await server.app.listen({host:'127.0.0.1',port:0});
+ const child=spawn(process.env.GODOT4_CONSOLE??'D:/Projects/Codex/tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe',
+  ['--path',project,'--rendering-method','gl_compatibility','--script',join(scripts,'story-ui.gd'),'--log-file',join(work,'client.log'),'--','--kernel-ephemeral','--skip-intro'],
+  {windowsHide:true,env:{...process.env,APPDATA:join(work,'appdata'),XIUXIAN_BACKEND_URL:server.app.listeningOrigin,XIUXIAN_STORY_WORK:work,XIUXIAN_STORY_OUTPUT:output},stdio:['ignore','inherit','inherit']});
+ const timeout=setTimeout(()=>child.kill(),480000);
+ const code=await new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject)}).finally(()=>clearTimeout(timeout));
+ assert.equal(code,0,'Rendered story/adventure progression');
+ const client=JSON.parse(readFileSync(join(work,'client-result.json'),'utf8'));
+ const account=server.db.get('SELECT id FROM accounts WHERE username=?','story_runner');
+ assert(account,'Account was created through the real registration form');
+ const actor=server.game.snapshot(account.id).cultivators.find(row=>row.role==='self').cultivator_id;
+ const snapshot=()=>server.game.characterSnapshot(account.id,actor);
+ const command=(name,payload={})=>server.game.execute(account.id,name,{cultivator_id:actor,...payload},randomUUID());
+ const story=command('story.snapshot');
+ assert.equal(story.current_chapter_id,'fire');
+ assert.equal(story.chapters.find(row=>row.id==='wood').status,'completed');
+ assert.equal(story.seals.length,1);
+ assert.equal(story.cleared_count,3);
+ assert.equal(story.adventure.level,client.adventure.level);
+ assert.equal(story.adventure.xp,client.adventure.xp);
+ assert.equal(server.db.get('SELECT COUNT(*) AS count FROM story_nodes WHERE cultivator_id=? AND node_id=?',actor,'wood.intro').count,1);
+ assert.equal(server.db.get('SELECT COUNT(*) AS count FROM story_nodes WHERE cultivator_id=? AND node_id=?',actor,'wood.closure').count,1);
+ const before=snapshot();
+ command('story.advance',{node_id:'wood.closure'});
+ const replay=snapshot();
+ assert.deepEqual(replay.resources,before.resources,'Replayed closure cannot reward again');
+ assert.deepEqual(replay.adventure,before.adventure,'Replayed closure cannot award experience twice');
+ const closureLedger=server.db.all("SELECT resource,delta FROM ledger WHERE operation_id=? ORDER BY resource",`story:${actor}:wood.closure`);
+ assert.deepEqual(closureLedger.map(row=>[row.resource,row.delta]),[['materials',13],['spirit_stones',160]]);
+ assert.equal(server.db.get('SELECT COUNT(*) AS count FROM baselines WHERE cultivator_id=?',actor).count,0);
+ assert.deepEqual(snapshot().equipment.map(item=>item.upgrade_level).sort(),[0,1,1]);
+ const runs=server.db.all('SELECT stage_id,result FROM expedition_runs WHERE cultivator_id=? ORDER BY rowid',actor).map(row=>({stage:row.stage_id,result:JSON.parse(row.result)}));
+ assert.deepEqual(runs.filter(row=>row.result.won).map(row=>row.stage),['b01','b02','b03']);
+ assert.equal(runs.find(row=>row.stage==='b04').result.reward.spirit_stones,0);
+ const report={work,output,client,story,character:snapshot(),runs};
+ writeFileSync(join(output,'story-ui-report.json'),JSON.stringify(report,null,2));
+ console.log('STORY_UI_SERVER: real registration, persisted dialogue, three authoritative wood victories, paid gear growth, exactly one chapter reward, restored mainline/HUD and live fire arena');
+}finally{await server.app.close();}

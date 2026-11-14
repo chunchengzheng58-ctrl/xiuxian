@@ -84,6 +84,8 @@ func card(rect: Rect2, parent: Node = self, color: Color = PAPER) -> VBoxContain
 	return content
 
 func label_into(parent: Node, text: String, size: int = 17, color: Color = INK) -> Label:
+	if is_instance_valid(modal) and (parent == modal or modal.is_ancestor_of(parent)) and preload("res://scripts/family_panel.gd").uses_touch_layout():
+		size = maxi(28, size)
 	return super.label_into(parent, text, size, _warm(color))
 
 func button(parent: Node, text: String, callback: Callable, primary: bool = false) -> Button:
@@ -96,6 +98,9 @@ func button(parent: Node, text: String, callback: Callable, primary: bool = fals
 	b.add_theme_color_override("font_hover_color", Color("fff0cb") if primary else BROWN)
 	b.add_theme_color_override("font_pressed_color", Color("fff0cb"))
 	b.add_theme_color_override("font_disabled_color", Color("87765a"))
+	if is_instance_valid(modal) and (parent == modal or modal.is_ancestor_of(parent)) and preload("res://scripts/family_panel.gd").uses_touch_layout():
+		b.custom_minimum_size.y = maxi(96, b.custom_minimum_size.y)
+		b.add_theme_font_size_override("font_size", 28)
 	return b
 
 func _build_hud() -> void:
@@ -176,14 +181,14 @@ func _build_hud() -> void:
 	tip_style.content_margin_bottom = 8
 	tips.get_parent().add_theme_stylebox_override("panel", tip_style)
 	label_into(tips, "W A S D  移动   ·   Shift 奔跑   ·   E 交互", 16, Color("fae6bd"))
-	label_into(tips, "点击地点自动前往 · 点击村民交谈 · Esc 关闭", 12, Color("c2aa88"))
+	label_into(tips, "点击场景地点前往 · 点击村民交谈 · Esc 关闭", 12, Color("c2aa88"))
 	var navigation = HBoxContainer.new()
 	navigation.position = Vector2(573, 831)
 	navigation.add_theme_constant_override("separation", 8)
 	add_child(navigation)
 	for entry in [["健康档案", "home"], ["技能练习", "battle"], ["属性闯关", "boss"], ["聚宝阁", "gacha"], ["天机碑", "records"]]:
 		var id: String = entry[1]
-		button(navigation, entry[0], func(): game.travel_to(id))
+		button(navigation, entry[0], func(): game.enter_site(id))
 	hint = label_into(self, "", 17, Color("ffe7a4"))
 	hint.position = Vector2(470, 771)
 	hint.size = Vector2(500, 34)
@@ -205,9 +210,17 @@ func _build_hud() -> void:
 func refresh() -> void:
 	var state = game.state
 	var values = [state.cultivation, state.equipment.qi, state.cleared_bosses.size(), state.seals]
+	var labels := ["修为", "灵气", "首通", "灵印"]
+	if state.is_remote() and state.family_member_id == "self" and not state.adventure.is_empty():
+		values[0] = int(state.adventure.get("level", 1))
+		labels[0] = "冒险等级"
+		values[2] = int(state.adventure.get("cleared_count", 0))
+		values[3] = int(state.adventure.get("seal_count", 0))
+		labels[2] = "秘境首通"
+		labels[3] = "归衡印"
 	for i in range(counters.size()):
-		counters[i].text = ["修为", "灵气", "首通", "灵印"][i] + " " + str(values[i])
-	realm_label.text = state.realm()
+		counters[i].text = labels[i] + " " + str(values[i])
+	realm_label.text = "游历 Lv.%d" % int(state.adventure.level) if state.is_remote() and state.family_member_id == "self" and not state.adventure.is_empty() else state.realm()
 	day_label.text = "修行 %d 天" % state.days
 	hud_family_label.text = state.member_label() if not state.family_member_id.is_empty() else "我的账号"
 	daily_label.text = "✓  个人计划已确认\n✓  今日奖励已领取" if state.today() in state.rewarded_days else "□  按计划完成记录\n□  确认后领取奖励"
@@ -218,7 +231,7 @@ func update_proximity(id: String) -> void:
 		var index = id.trim_prefix("npc_").to_int()
 		hint.text = "E  对话「%s」" % game.npc_sprites[index].get_parent().name
 	else:
-		hint.text = "E  进入「%s」" % names[id] if names.has(id) else "走近建筑或村民按 E 互动 · 点击下方地点可前往"
+		hint.text = "E  进入「%s」" % names[id] if names.has(id) else "走近建筑或村民按 E 互动 · 点击下方按钮直接进入"
 
 func reset_demo() -> void:
 	if not game.account_ready:

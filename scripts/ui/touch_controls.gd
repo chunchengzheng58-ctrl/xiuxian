@@ -56,6 +56,9 @@ func controls_enabled() -> bool:
 func _active() -> bool:
 	if not _enabled:
 		return false
+	var options := get_node_or_null("/root/GameOptions")
+	if options != null and options.get("settings_open") == true:
+		return false
 	var focus := get_viewport().gui_get_focus_owner()
 	if (focus is LineEdit or focus is TextEdit) and focus.is_visible_in_tree():
 		return false
@@ -337,6 +340,7 @@ func _flush_releases(delta: float) -> void:
 		_redraw()
 
 func _reset_state() -> void:
+	_captured_fingers.clear()
 	_joystick_index = -1
 	_joystick_value = Vector2.ZERO
 	if _sprint_held:
@@ -365,11 +369,13 @@ func _layout_scale() -> float:
 
 func _joystick_center() -> Vector2:
 	var s := _surface_size()
-	var inset := (152.0 if is_battle() else 190.0) * _layout_scale()
+	# Exploration's left HUD extends down to the mainline button. Keep this
+	# control below that hit area; otherwise its captured touch hides the entry.
+	var inset := (152.0 if is_battle() else 65.0) * _layout_scale()
 	return Vector2(136.0 * _layout_scale(), s.y - inset)
 
 func _joystick_radius() -> float:
-	return maxf(1.0, 90.0 * _layout_scale())
+	return maxf(1.0, (90.0 if is_battle() else 55.0) * _layout_scale())
 
 func _layout() -> void:
 	var s := _surface_size()

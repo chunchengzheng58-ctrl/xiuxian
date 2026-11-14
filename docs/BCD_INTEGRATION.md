@@ -1,6 +1,6 @@
 # A / B / C / D 整合说明
 
-更新日期：2026-10-31。合并依据：[C 合并指南](BACKEND_INTEGRATION.md)。玩法和数值采用 B 的设计（PR #4）；所有资源、奖励和身份由 C 的服务端确认；微信与健康资料由 D 负责。
+更新日期：2026-11-07。原整合日期为 2026-10-31，合并依据：[C 合并指南](BACKEND_INTEGRATION.md)。玩法和数值采用 B 的设计（PR #4）及后续装备成长配置；正式账号的资源、奖励和身份由 C 的服务端确认；微信与健康资料由 D 负责。
 
 ## 产品形态
 
@@ -26,7 +26,11 @@ C 的环境变量：`HEALTH_SERVICE_TOKEN`、`WEB_ROOT`（默认 `build/web`）�
 | 钱包 | 每个角色独立：`spirit_stones`（游戏里叫灵气）、`realm_xp`（修为）、`seals`（灵印），累计有效日 `days`；全部经 Ledger 写入 |
 | 每日奖励 | 同一角色、同一北京时间自然日的日奖励组 `daily_plan` 只结算一次：灵气 +100、修为 +10、灵印 +1、累计日 +1。核验方式只决定能否成立，不影响奖励数量 |
 | 抽卡 | `growth.draw`：单抽 70，十连 700；五档品质；武器、衣服、鞋子、饰品四个槽位；按首份初始属性连续插值的概率；先等概率选槽位，再在槽内等概率选模板；十连没有史诗时只把末件升为史诗；重复装备保留为独立实例 |
+| 新版祈愿与装备 | `equipment-growth-v2`：第 31 抽起逐步增加传说机会，最多 50 抽传说或以上，出传说/神话清零；可定向三种流派；强化最高 +10、铭刻、分解和 2/4 件套装。本人首次正式 PVE 尚无初始值时使用游戏支持值 50，不创建健康基线 |
 | 穿戴 | `growth.equip` / `growth.unequip`，按角色校验归属 |
+| 交易 | 本人角色使用万宝集；跨账号原子结算装备与双方灵气，保留强化和铭刻，支持撤单与交易历史 |
+| 社交与论剑 | 本人角色的同道录名片、邀请码、好友申请、私信、屏蔽；已接受好友可约战，服务端同步动作、命中与战果 |
+| 五域主线与秘境 | 本人正式二十关、九章对白与目标、一次性章节奖励及独立冒险等级；服务端推进 Boss AI、预警与命中，装备按入场快照生效；资源与历练原子结算 |
 | 初始属性 | 年轻人在网页健康入口上传报告。确认时先向 C 申请角色票据 `POST /api/v2/baselines/tickets`，健康入口再以服务身份写入 `POST /internal/v1/baselines`。首份档案冻结抽卡支持值 |
 | 任务读取 | `quests.family_today`：当日全部角色的任务、核验方式和结算；灵宠与微信记录页使用同一份数据 |
 
@@ -67,4 +71,4 @@ cd server && npm run check && npm run demo && npm run test:d
 cd server && npm run test:godot -- <Godot控制台路径> && npm run test:godot-b -- <Godot控制台路径> && npm run test:godot-b -- <Godot控制台路径> a_backend_test
 ```
 
-微信消息收发改为 sidecar 内置的 iLink 长轮询网关（`wechat-sidecar/ilink_gateway.py`）：`getupdates` 游标与去重状态持久化在 `bot_data/ilink_state.json`，入站消息交给 `elder_assistant.handle_message`，回复走 `sendmessage`；任务提醒也从 openclaw CLI 改为同一网关发送。`openclaw-health-hook` 已删除，不再需要外部插件。尚未验证：真实账号扫码后的长时间收发与限流表现。实时联机战斗、全服庆典仍未实现。
+微信消息收发改为 sidecar 内置的 iLink 长轮询网关（`wechat-sidecar/ilink_gateway.py`）：`getupdates` 游标与去重状态持久化在 `bot_data/ilink_state.json`，入站消息交给 `elder_assistant.handle_message`，回复走 `sendmessage`；任务提醒也从 openclaw CLI 改为同一网关发送。`openclaw-health-hook` 已删除，不再需要外部插件。尚未验证真实账号扫码后的长时间收发与限流表现。好友实时论剑已实现；全服匹配、排行、全服庆典尚未实现。源码能力、实际联调与交付验证范围见 [发布核对](RELEASE_READINESS.md)。

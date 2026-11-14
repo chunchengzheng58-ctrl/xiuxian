@@ -389,8 +389,16 @@ func _build_npcs() -> void:
 		)
 		root.add_child(area)
 
+func enter_site(id: String) -> void:
+	if ui.modal_open or get_node("/root/GameOptions").settings_open:
+		return
+	player.route.clear()
+	player.destination_site = ""
+	ui.open_site(id)
+
+
 func travel_to(id: String) -> void:
-	if ui.modal_open:
+	if ui.modal_open or get_node("/root/GameOptions").settings_open:
 		return
 	for site in sites:
 		if site.id == id:
@@ -439,6 +447,8 @@ func interact_nearby() -> void:
 		ui.open_site(nearest)
 
 func _input(event: InputEvent) -> void:
+	if get_node("/root/GameOptions").settings_open:
+		return
 	# Handle before focused HUD buttons consume keyboard events. Modal forms keep their input.
 	if event.is_action_pressed("interact") and not event.is_echo() and not ui.modal_open:
 		interact_nearby()
@@ -455,6 +465,8 @@ func _draw() -> void:
 			draw_colored_polygon(polygon, Color(0.3, 1, 0.4, 0.25))
 
 func _unhandled_input(event: InputEvent) -> void:
+	if get_node("/root/GameOptions").settings_open:
+		return
 	if event.is_action_pressed("interact") and not event.is_echo():
 		interact_nearby()
 	if event is InputEventKey and event.pressed and not event.echo:

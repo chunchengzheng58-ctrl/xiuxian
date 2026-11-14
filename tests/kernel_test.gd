@@ -13,8 +13,16 @@ const JsonPersistence = preload("res://scripts/kernel/adapters/json_persistence.
 const Router = preload("res://scripts/kernel/command_router.gd")
 const Audit = preload("res://scripts/kernel/audit.gd")
 const GameApi = preload("res://scripts/net/game_api.gd")
-## 已由系统负责人实现的命令；其余命令仍必须返回 NOT_IMPLEMENTED。
-const IMPLEMENTED_COMMANDS: Array = ["lifecycle.request_change", "lifecycle.confirm_change", "lifecycle.update_stage", "combat.start", "combat.finish"]
+## 已接入领域实现或后端网关的命令；缺少后端时必须拒绝，不能伪造业务成功。
+## 仍未实现的命令继续检查 NOT_IMPLEMENTED，防止占位功能假装可用。
+const IMPLEMENTED_COMMANDS: Array = [
+	"lifecycle.request_change", "lifecycle.confirm_change", "lifecycle.update_stage", "combat.start", "combat.finish",
+	"combat.duel_lobby", "combat.duel_invite", "combat.duel_reply", "combat.duel_leave",
+	"combat.expedition_lobby", "combat.expedition_start", "combat.expedition_leave",
+	"combat.matchmaking_lobby", "combat.matchmaking_join", "combat.matchmaking_cancel",
+	"story.snapshot", "story.advance",
+	"social.home", "social.profile", "social.invite", "social.respond", "social.unblock", "social.chat", "social.send", "social.read",
+]
 var _assertions: int = 0
 var _failures: Array[String] = []
 

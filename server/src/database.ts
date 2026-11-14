@@ -150,6 +150,185 @@ CREATE TABLE boss_clears (
   cultivator_id TEXT NOT NULL REFERENCES cultivators(id), boss_id TEXT NOT NULL, first_session_id TEXT NOT NULL,
   best_seconds REAL NOT NULL, cleared_at INTEGER NOT NULL, PRIMARY KEY(cultivator_id, boss_id)
 );
+`, String.raw`
+-- 4：市场挂单与成交历史。在售装备仍属于卖方，但不能穿戴或重复上架。
+CREATE TABLE market_listings (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT NOT NULL UNIQUE,
+  equipment_id TEXT NOT NULL REFERENCES equipment(id),
+  seller_id TEXT NOT NULL REFERENCES cultivators(id),
+  buyer_id TEXT REFERENCES cultivators(id),
+  template INTEGER NOT NULL CHECK(template >= 0),
+  rarity_index INTEGER NOT NULL CHECK(rarity_index BETWEEN 0 AND 4),
+  slot TEXT NOT NULL,
+  price INTEGER NOT NULL CHECK(price BETWEEN 1 AND 1000000),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'sold', 'cancelled')),
+  created_at INTEGER NOT NULL,
+  closed_at INTEGER,
+  CHECK((status = 'sold') = (buyer_id IS NOT NULL)),
+  CHECK((status = 'active') = (closed_at IS NULL)),
+  CHECK(seller_id <> buyer_id)
+);
+CREATE UNIQUE INDEX market_equipment_active ON market_listings(equipment_id) WHERE status = 'active';
+CREATE INDEX market_browse ON market_listings(sequence) WHERE status = 'active';
+CREATE INDEX market_browse_slot ON market_listings(slot, sequence) WHERE status = 'active';
+CREATE INDEX market_seller ON market_listings(seller_id, sequence);
+CREATE INDEX market_buyer ON market_listings(buyer_id, sequence) WHERE buyer_id IS NOT NULL;
+`, String.raw`
+-- 5：独立的社交名片、双向好友与私信。关系删除时一并移除该会话。
+CREATE TABLE social_profiles (
+  cultivator_id TEXT PRIMARY KEY REFERENCES cultivators(id),
+  alias TEXT NOT NULL CHECK(length(alias) BETWEEN 1 AND 12),
+  invite_code TEXT NOT NULL UNIQUE CHECK(length(invite_code) = 16)
+);
+CREATE TABLE social_relations (
+  id TEXT PRIMARY KEY,
+  left_id TEXT NOT NULL REFERENCES social_profiles(cultivator_id),
+  right_id TEXT NOT NULL REFERENCES social_profiles(cultivator_id),
+  requester_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending', 'accepted')),
+  left_read INTEGER NOT NULL DEFAULT 0 CHECK(left_read >= 0),
+  right_read INTEGER NOT NULL DEFAULT 0 CHECK(right_read >= 0),
+  updated_at INTEGER NOT NULL,
+  UNIQUE(left_id, right_id),
+  CHECK(left_id < right_id AND requester_id IN (left_id, right_id))
+);
+CREATE INDEX social_right ON social_relations(right_id, status);
+CREATE TABLE social_blocks (
+  blocker_id TEXT NOT NULL REFERENCES social_profiles(cultivator_id),
+  blocked_id TEXT NOT NULL REFERENCES social_profiles(cultivator_id),
+  PRIMARY KEY(blocker_id, blocked_id),
+  CHECK(blocker_id <> blocked_id)
+);
+CREATE TABLE social_messages (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  relation_id TEXT NOT NULL REFERENCES social_relations(id) ON DELETE CASCADE,
+  sender_id TEXT NOT NULL REFERENCES social_profiles(cultivator_id),
+  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 240),
+  sent_at INTEGER NOT NULL
+);
+CREATE INDEX social_chat ON social_messages(relation_id, sequence);
+CREATE INDEX social_message_rate ON social_messages(sender_id, sent_at);
+`, String.raw`
+-- 6：论剑台邀请与战果；运行中的擂台由当前服务进程模拟。
+CREATE TABLE arena_duels (
+  id TEXT PRIMARY KEY,
+  relation_id TEXT NOT NULL,
+  challenger_id TEXT NOT NULL REFERENCES cultivators(id),
+  opponent_id TEXT NOT NULL REFERENCES cultivators(id),
+  challenger_alias TEXT NOT NULL, opponent_alias TEXT NOT NULL,
+  challenger_avatar TEXT NOT NULL, opponent_avatar TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'declined', 'cancelled', 'finished')),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  closed_at INTEGER,
+  winner INTEGER CHECK(winner IN (0, 1)),
+  reason TEXT,
+  challenger_hp INTEGER CHECK(challenger_hp BETWEEN 0 AND 100),
+  opponent_hp INTEGER CHECK(opponent_hp BETWEEN 0 AND 100),
+  CHECK(challenger_id <> opponent_id)
+);
+CREATE INDEX arena_challenger ON arena_duels(challenger_id, status, created_at);
+CREATE INDEX arena_opponent ON arena_duels(opponent_id, status, created_at);
+CREATE INDEX arena_active_expiry ON arena_duels(expires_at) WHERE status = 'active';
+`, String.raw`
+-- 7：装备成长。保留已分解实例，使交易历史可继续引用原始装备。
+ALTER TABLE cultivators ADD COLUMN legendary_pity INTEGER NOT NULL DEFAULT 0 CHECK(legendary_pity BETWEEN 0 AND 49);
+ALTER TABLE cultivators ADD COLUMN wish_school INTEGER NOT NULL DEFAULT -1 CHECK(wish_school BETWEEN -1 AND 2);
+ALTER TABLE equipment ADD COLUMN school INTEGER NOT NULL DEFAULT -1 CHECK(school BETWEEN -1 AND 2);
+ALTER TABLE equipment ADD COLUMN upgrade_level INTEGER NOT NULL DEFAULT 0 CHECK(upgrade_level BETWEEN 0 AND 10);
+ALTER TABLE equipment ADD COLUMN salvaged_at INTEGER CHECK(salvaged_at IS NULL OR equipped = 0);
+ALTER TABLE market_listings ADD COLUMN school INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE market_listings ADD COLUMN upgrade_level INTEGER NOT NULL DEFAULT 0;
+`, String.raw`
+-- 8: Authoritative expedition results and unlocks are separate from client-reported practice clears.
+CREATE TABLE expedition_runs (
+  id TEXT PRIMARY KEY,
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id),
+  stage_id TEXT NOT NULL CHECK(stage_id IN ('b01', 'b02', 'b03')),
+  avatar TEXT NOT NULL,
+  stats TEXT NOT NULL,
+  lifecycle_version INTEGER NOT NULL,
+  started_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  result TEXT
+);
+CREATE UNIQUE INDEX expedition_active ON expedition_runs(cultivator_id) WHERE finished_at IS NULL;
+CREATE INDEX expedition_history ON expedition_runs(cultivator_id, started_at);
+CREATE TABLE expedition_clears (
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id),
+  stage_id TEXT NOT NULL,
+  first_run_id TEXT NOT NULL REFERENCES expedition_runs(id),
+  best_ticks INTEGER NOT NULL,
+  cleared_at INTEGER NOT NULL,
+  PRIMARY KEY(cultivator_id, stage_id)
+);
+`, String.raw`
+-- 9: Public equal-stat matchmaking and authoritative, once-only ranked results.
+ALTER TABLE arena_duels ADD COLUMN mode TEXT NOT NULL DEFAULT 'friendly' CHECK(mode IN ('friendly', 'ranked'));
+ALTER TABLE arena_duels ADD COLUMN challenger_rating_before INTEGER;
+ALTER TABLE arena_duels ADD COLUMN challenger_rating_after INTEGER;
+ALTER TABLE arena_duels ADD COLUMN opponent_rating_before INTEGER;
+ALTER TABLE arena_duels ADD COLUMN opponent_rating_after INTEGER;
+CREATE TABLE arena_ratings (
+  cultivator_id TEXT PRIMARY KEY REFERENCES cultivators(id),
+  rating INTEGER NOT NULL DEFAULT 1000 CHECK(rating >= 0),
+  wins INTEGER NOT NULL DEFAULT 0 CHECK(wins >= 0),
+  losses INTEGER NOT NULL DEFAULT 0 CHECK(losses >= 0),
+  draws INTEGER NOT NULL DEFAULT 0 CHECK(draws >= 0)
+);
+CREATE TABLE arena_queue (
+  cultivator_id TEXT PRIMARY KEY REFERENCES cultivators(id),
+  joined_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX arena_queue_order ON arena_queue(joined_at);
+CREATE INDEX arena_ranked_history ON arena_duels(challenger_id, opponent_id, mode, created_at);
+`, String.raw`
+-- 10: Preserve all expedition history while admitting the twenty canonical bosses.
+-- Rebuild both sides of the run FK together; foreign_keys stays ON throughout migration.
+CREATE TABLE expedition_runs_v10 (
+  id TEXT PRIMARY KEY,
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id),
+  stage_id TEXT NOT NULL CHECK(stage_id IN ('b00','b01','b02','b03','b04','b05','b06','b07','b08','b09','b10','b11','b12','b13','b14','b15','b16','b17','b18','b19')),
+  avatar TEXT NOT NULL, stats TEXT NOT NULL, lifecycle_version INTEGER NOT NULL,
+  started_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, finished_at INTEGER, result TEXT
+);
+INSERT INTO expedition_runs_v10 SELECT * FROM expedition_runs;
+CREATE TABLE expedition_clears_v10 (
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id), stage_id TEXT NOT NULL,
+  first_run_id TEXT NOT NULL REFERENCES expedition_runs_v10(id),
+  best_ticks INTEGER NOT NULL, cleared_at INTEGER NOT NULL,
+  PRIMARY KEY(cultivator_id, stage_id)
+);
+INSERT INTO expedition_clears_v10 SELECT * FROM expedition_clears;
+DROP TABLE expedition_clears;
+DROP TABLE expedition_runs;
+ALTER TABLE expedition_runs_v10 RENAME TO expedition_runs;
+ALTER TABLE expedition_clears_v10 RENAME TO expedition_clears;
+CREATE UNIQUE INDEX expedition_active ON expedition_runs(cultivator_id) WHERE finished_at IS NULL;
+CREATE INDEX expedition_history ON expedition_runs(cultivator_id, started_at);
+
+-- This append-only XP ledger is independent of health realm_xp and PVP ratings.
+CREATE TABLE adventure_awards (
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id),
+  source_key TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('expedition_first','expedition_repeat','chapter')),
+  amount INTEGER NOT NULL CHECK(amount >= 0 AND amount <= 1000000),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(cultivator_id, source_key)
+);
+INSERT INTO adventure_awards (cultivator_id, source_key, kind, amount, created_at)
+  SELECT e.cultivator_id, 'expedition:first:' || e.stage_id, 'expedition_first',
+    CASE e.stage_id WHEN 'b01' THEN 120 WHEN 'b02' THEN 180 WHEN 'b03' THEN 260 END, e.cleared_at
+  FROM expedition_clears e JOIN cultivators c ON c.id = e.cultivator_id
+  WHERE c.role = 'self' AND e.stage_id IN ('b01','b02','b03');
+CREATE TABLE story_nodes (
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id), node_id TEXT NOT NULL,
+  completed_at INTEGER NOT NULL, reward_operation_id TEXT UNIQUE,
+  PRIMARY KEY(cultivator_id, node_id)
+);
 `];
 
 export class Database {

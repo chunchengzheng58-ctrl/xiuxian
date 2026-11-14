@@ -138,8 +138,12 @@ func _ready() -> void:
 	ground.ground_only = true
 	world.add_child(ground)
 	boss_audio = AudioStreamPlayer.new()
+	boss_audio.bus = "Effects"
 	boss_audio.volume_db = -13
 	add_child(boss_audio)
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null:
+		audio.enter_battle(self)
 	var effects = Node2D.new()
 	effects.set_script(Effects)
 	effects.view = self
@@ -265,7 +269,7 @@ func _update_touch_hud(enabled: bool) -> void:
 	message.size.x = 856 if enabled else 1070
 
 func touch_actions_active() -> bool:
-	return rules != null and not paused and not rules.finished
+	return rules != null and not paused and not rules.finished and not _settings_open()
 
 func battle_action_state() -> Array:
 	# Match the mobile layout and reuse the desktop buttons' availability checks.
@@ -384,6 +388,8 @@ func _landed_impact(damage: int, impacts: Array, counter: bool, is_sword: bool) 
 		floating("-%d" % impact.damage,Vector2(impact.position)-Vector2(30,boss_height+10 if impact.boss else 100),Color("ffe5a3") if counter else Color("c8f3d6"))
 
 func basic_attack() -> void:
+	if _settings_open():
+		return
 	if paused or rules.airborne_time > 0.0 or roll_remaining>0:
 		return
 	var result = rules.start_action("basic",hero.position)
@@ -395,6 +401,8 @@ func basic_attack() -> void:
 		show_result()
 
 func use_skill(choice: int) -> void:
+	if _settings_open():
+		return
 	if paused or rules.finished or choice < 0 or choice > 3 or (roll_remaining>0 and choice!=1):
 		return
 	if rules.airborne_time > 0.0 and choice != 2:
@@ -427,6 +435,9 @@ func use_skill(choice: int) -> void:
 		show_result()
 
 func floating(text: String, at: Vector2, color: Color = Color("c8f3d6")) -> void:
+	var options := get_node_or_null("/root/GameOptions")
+	if options != null and not options.get_value("show_damage_numbers", true):
+		return
 	var popup: Label = impact_text.duplicate()
 	popup.text = text
 	popup.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -442,6 +453,8 @@ func floating(text: String, at: Vector2, color: Color = Color("c8f3d6")) -> void
 	tween.chain().tween_callback(popup.queue_free)
 
 func _process(delta: float) -> void:
+	if _settings_open():
+		return
 	if game.state != entered_state or not entered_state.allows_battle():
 		rules.finished = true
 		rules.won = false
@@ -457,6 +470,10 @@ func _process(delta: float) -> void:
 		if delta <= 0:
 			return
 	clock += delta
+	if _reduced_flash():
+		phase_flash = 0.0
+		shake = 0.0
+		hero.modulate = Color.WHITE
 	hero_hurt_visual = maxf(0,hero_hurt_visual-delta)
 	for effects in [hit_bursts, sap_flows, split_bursts]:
 		for i in range(effects.size() - 1, -1, -1):
@@ -548,6 +565,8 @@ func _clamp_hero() -> void:
 	hero.position.y = clampf(hero.position.y, 458, 680)
 
 func _input(event: InputEvent) -> void:
+	if _settings_open():
+		return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	match event.keycode:
@@ -688,6 +707,8 @@ func enable_companion() -> bool:
 
 
 func _jolt(strength: float, duration: float) -> void:
+	if _reduced_flash():
+		return
 	shake_strength = strength
 	shake = duration
 
@@ -774,8 +795,9 @@ func _enemy_feedback(event: Dictionary, displaced: bool = false) -> void:
 			shield_impact = .6 if event.absorbed > 0 else 0
 			message.text = str(event.get("attack","攻击")) + "造成 %d 点伤害。" % event.damage + ("归元被中断。" if event.interrupted else "")
 			floating("-%d" % event.damage, hero.position-Vector2(20,160+rules.airborne_height()),Color("ffb6a0"))
-			hero.modulate = Color("ffaaa0")
-			create_tween().tween_property(hero,"modulate",Color.WHITE,.4)
+			if not _reduced_flash():
+				hero.modulate = Color("ffaaa0")
+				create_tween().tween_property(hero,"modulate",Color.WHITE,.4)
 			if rules.brain != null:
 				hit_stop = .055
 				_jolt(6, .16)
@@ -803,16 +825,31 @@ func _boss_pose(_delta: float) -> void:
 	dragon.flip_h = rules.brain.facing.x>.15
 	dragon.z_index = 3 if boss_anchor.y>hero.position.y else 1
 	hero.z_index = 2
-	dragon.modulate = Color(1.3,1.15,1.05) if hurt_visual>0 else Color.WHITE
+	dragon.modulate = Color(1.3,1.15,1.05) if hurt_visual>0 and not _reduced_flash() else Color.WHITE
 	if rules.finished and rules.won: dragon.modulate = Color(.7,.7,.7,.7)
 
 func _exit_tree() -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null:
+		audio.leave_battle(self)
 	var touch := get_node_or_null("/root/TouchControls")
 	if touch != null:
 		touch.unbind_battle(self)
 	if is_instance_valid(boss_audio):
 		boss_audio.stop()
 		boss_audio.stream = null
+
+func _settings_open() -> bool:
+	if not is_inside_tree():
+		return false
+	var options := get_node_or_null("/root/GameOptions")
+	return options != null and options.settings_open
+
+func _reduced_flash() -> bool:
+	if not is_inside_tree():
+		return false
+	var options := get_node_or_null("/root/GameOptions")
+	return options != null and options.get_value("reduced_flash", false)
 
 
 func _hero_pose() -> void:

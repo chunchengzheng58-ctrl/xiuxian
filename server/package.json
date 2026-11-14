@@ -9,6 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "migrate": "tsx tools/migrate.ts",
+    "backup": "tsx tools/backup.ts",
+    "restore": "tsx tools/restore.ts",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "check": "npm run build && npm test",
     "demo": "tsx tools/demo.ts",

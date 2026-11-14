@@ -18,8 +18,12 @@ var service_url = DEFAULT_URL:
 		if normalized != service_url:
 			service_url = normalized
 			reset_session()
+var local_service_url := DEFAULT_URL
 var generation = 0
 var account: Dictionary = {}
+var social_summary: Dictionary = {}
+var duel_summary: Dictionary = {}
+var _social_revision: int = -1
 var busy = false
 var allow_autostart = true
 var started_server_pid = -1
@@ -33,11 +37,17 @@ func _ready() -> void:
 		if OS.has_environment(name):
 			service_url = OS.get_environment(name)
 			break
+	local_service_url = service_url
 	if OS.has_feature("web"):
 		service_url = web_service_origin(
 			str(JavaScriptBridge.eval("location.origin")),
 			str(JavaScriptBridge.eval("location.pathname"))
 		)
+	else:
+		var options := get_node_or_null("/root/GameOptions")
+		var override: String = str(options.get_value("server_url", "")) if options != null else ""
+		if not override.is_empty() and endpoint_allowed(override):
+			service_url = override
 	api = GameApi.new()
 	api.name = "GameApi"
 	add_child(api)
@@ -156,8 +166,17 @@ func sync_family(roster: RefCounted) -> Dictionary:
 		return {"ok": false, "code": "SESSION_CHANGED", "message": "账号已切换"}
 	if not listed.ok:
 		return listed
-	var result = await roster.apply_remote(listed.data.cultivators, core)
+	# growth 的完整账号投影已丢弃乱序旧读；不要再把旧 HTTP 回执覆盖进家族。
+	var projection: Dictionary = core.snapshot("growth")
+	var result = await roster.apply_remote(projection.get("cultivators", listed.data.cultivators), core)
 	if own == generation and result.ok:
+		var revision := int(listed.data.get("revision", -1))
+		if revision >= int(projection.get("account_revision", -1)) and revision >= _social_revision:
+			_social_revision = revision
+			var summary = listed.data.get("social")
+			social_summary = summary if summary is Dictionary else {}
+			var duel = listed.data.get("duel")
+			duel_summary = duel if duel is Dictionary else {}
 		family_synced.emit()
 	return result
 
@@ -178,6 +197,9 @@ func _begin(clear_identity: bool = true) -> void:
 
 func _clear() -> void:
 	account.clear()
+	social_summary.clear()
+	duel_summary.clear()
+	_social_revision = -1
 	if is_instance_valid(realtime):
 		realtime.disconnect_stream()
 	if is_instance_valid(api):

@@ -18,7 +18,10 @@ func _initialize() -> void:
 
 func wait_api() -> void:
 	var deadline = Time.get_ticks_msec() + 15000
-	while game.account_api.busy and Time.get_ticks_msec() < deadline:
+	while Time.get_ticks_msec() < deadline:
+		var awaiting_choice: bool = is_instance_valid(game.ui.account_panel) and game.ui.account_panel.migration_mode
+		if not game.account_api.busy and (not game.account_api.is_authenticated() or game.account_ready or awaiting_choice):
+			break
 		await process_frame
 	for i in range(5):
 		await process_frame

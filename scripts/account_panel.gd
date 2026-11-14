@@ -46,13 +46,22 @@ func build() -> void:
 	if register_mode:
 		right.add_theme_constant_override("separation", 8)
 	if migration_mode:
-		text(right, "保留你的旧进度", 30, GOLD_TEXT)
+		text(right, "备份你的旧存档", 30, GOLD_TEXT)
 		paragraph(right, "已登录：" + str(game.account_api.account.display_name), 20)
-		paragraph(right, "发现此前的游戏存档。导入后，未标注家人关系的原角色归回“我自己”，已填写父亲、母亲等关系的家人继续保留。", 20)
-		paragraph(right, "本人角色不占用两个家人位置。旧存档会先备份，导入进度只归属当前账号。", 19)
-		status_label = paragraph(right, "请选择是否把旧进度保留到这个账号。", 17, GOLD_TEXT)
-		submit_button = action(right, "保留旧进度到当前账号", ui.import_old_account, true)
-		action(right, "使用全新的角色与两个家人位置", func(): ui.finish_account_setup(false))
+		paragraph(right, "发现此前的本机存档。可以在当前账号的本机缓存中保留独立副本，原文件也会保留，供离线查阅或手动恢复。", 20)
+		paragraph(right, "线上继续使用服务端的角色与进度；旧档的灵气、装备、健康档案和关卡记录不会转入线上账号。", 19)
+		if game.pending_account_roster != null and not game.pending_account_roster.legacy_record.is_empty():
+			var roster = game.pending_account_roster
+			var archive_path: String = roster.cache_root().path_join("legacy-archives").path_join(str(roster.account.id)).path_join(str(roster.legacy_record.fingerprint) + ".json")
+			var archive_location := LineEdit.new()
+			archive_location.text = ProjectSettings.globalize_path(archive_path)
+			archive_location.editable = false
+			archive_location.tooltip_text = "备份位置：可选中并复制完整路径；成功后也可从家人面板查看。"
+			archive_location.custom_minimum_size.y = 40
+			right.add_child(archive_location)
+		status_label = paragraph(right, "备份成功并完成服务同步后，才会进入游戏。", 17, GOLD_TEXT)
+		submit_button = action(right, "备份旧档并进入账号", ui.import_old_account, true)
+		action(right, "跳过备份，使用服务端进度", func(): ui.finish_account_setup(false))
 		action(right, "退出并换一个账号", ui.logout_account)
 		return
 	var top = HBoxContainer.new()
@@ -60,6 +69,7 @@ func build() -> void:
 	right.add_child(top)
 	var login_tab := action(top, "登录", func(): switch_mode(false), not register_mode)
 	var register_tab := action(top, "注册", func(): switch_mode(true), register_mode)
+	action(top, "设置 / 服务器", ui.open_settings)
 	if touch:
 		login_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		register_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL

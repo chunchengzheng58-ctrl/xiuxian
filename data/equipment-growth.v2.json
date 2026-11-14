@@ -1,0 +1,19 @@
+{
+  "version": "equipment-growth-v2",
+  "max_level": 10,
+  "upgrade_percent_per_level": 5,
+  "upgrade_flat_per_level": 1,
+  "upgrade_materials_per_level": 2,
+  "upgrade_qi_per_level": 10,
+  "attune_materials": 5,
+  "attune_qi": 30,
+  "salvage_base": [1, 3, 8, 20, 50],
+  "legendary_soft_start": 30,
+  "legendary_soft_step": 0.03,
+  "legendary_hard": 50,
+  "schools": [
+    {"name": "苍梧生息", "color": "69b995", "two": {"life": 12}, "four": {"defense": 5}},
+    {"name": "白羽剑意", "color": "e8c56d", "two": {"attack": 4}, "four": {"spirit": 12}},
+    {"name": "玄泽踏云", "color": "75aede", "two": {"stamina": 10}, "four": {"defense": 4}}
+  ]
+}

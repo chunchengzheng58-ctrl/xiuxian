@@ -16,6 +16,7 @@ export type Character = {
   spirit_stones: number; realm_xp: number; materials: number; pity: number; created_at: number;
   role: string; profile: string; seals: number; draw_count: number; initial_score: number | null; initial_profile_id: string;
   lifecycle_version: number; stage_template: string; stage_index: number;
+  legendary_pity: number; wish_school: number;
 };
 export type Template = {
   id: string; version: string; title: string; requirement: string; event_type: string;

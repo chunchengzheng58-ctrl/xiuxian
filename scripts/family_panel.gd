@@ -171,6 +171,8 @@ func build_members(stack: VBoxContainer = null) -> void:
 	action(own_actions, "进入我的角色", func(): ui.activate_family("self"), true)
 	action(own_actions, "我的资料", func(): ui.activate_family("self", true))
 	action(own_actions, "退出 / 换账号", ui.logout_account)
+	if not game.family.legacy_archive.is_empty():
+		action(own_actions, "查看旧档备份", show_legacy_archive)
 	for i in range(2):
 		var member = game.family.members[i] if i < game.family.members.size() else {}
 		var selected = not member.is_empty() and member.id == game.family.active_id
@@ -230,6 +232,30 @@ func show_form(id: String) -> void:
 	editing_id = id
 	form_open = true
 	build()
+
+func show_legacy_archive() -> void:
+	var archive: Dictionary = game.family.legacy_archive
+	if archive.is_empty():
+		return
+	var dialog := AcceptDialog.new()
+	dialog.title = "本机旧档备份"
+	dialog.ok_button_text = "关闭"
+	var content := VBoxContainer.new()
+	content.custom_minimum_size.x = 700
+	content.size = Vector2(700, 200)
+	dialog.add_child(content)
+	var explanation := paragraph(content, "原存档已保留，以下副本仅用于本机离线查阅或手动恢复。线上角色、余额、装备和关卡继续以服务端为准。", 18)
+	explanation.custom_minimum_size.x = 700
+	var location := LineEdit.new()
+	location.text = ProjectSettings.globalize_path(str(archive.get("path", "")))
+	location.editable = false
+	location.custom_minimum_size.y = 44
+	content.add_child(location)
+	action(content, "复制备份完整路径", func(): DisplayServer.clipboard_set(location.text))
+	add_child(dialog)
+	dialog.confirmed.connect(dialog.queue_free)
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered(Vector2i(760, 270))
 
 func field(parent: Node, label: String, placeholder: String, value: String = "", limit: int = 30) -> LineEdit:
 	text(parent, label, 17, MUTED_TEXT)

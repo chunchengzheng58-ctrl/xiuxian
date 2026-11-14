@@ -59,6 +59,7 @@
       "cell": 2,
       "background": "res://assets/pixel_campaign/map_wood.png",
       "boss_height": 245,
+      "preview_height": 134,
       "boss_position": [
         1046,
         570

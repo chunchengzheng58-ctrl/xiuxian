@@ -6,7 +6,8 @@ extends "res://scripts/kernel/system_module.gd"
 func _init() -> void:
 	super("growth")
 
-const WRITES = ["growth.create", "growth.create_member", "growth.update_member", "growth.equip", "growth.unequip", "growth.draw"]
+const WRITES = ["growth.create", "growth.create_member", "growth.update_member", "growth.equip", "growth.unequip", "growth.draw", "growth.upgrade", "growth.attune", "growth.salvage", "growth.set_wish"]
+const MARKET_WRITES = ["growth.market_post", "growth.market_cancel", "growth.market_buy"]
 var _session: int = 0
 # 写请求超时后用同一幂等键重试；只有确定结果（成功或业务拒绝）才释放。
 var _pending_keys: Dictionary = {}
@@ -51,18 +52,20 @@ func cultivator(cultivator_id: String) -> Dictionary:
 func execute(command: String, payload: Dictionary) -> Dictionary:
 	var session: int = _session
 	var key: String = ""
-	if command in WRITES and not payload.has("request_id"):
+	if (command in WRITES or command in MARKET_WRITES) and not payload.has("request_id"):
 		var signature: String = command + ":" + JSON.stringify(payload, "", true)
 		if not _pending_keys.has(signature):
 			_pending_keys[signature] = Crypto.new().generate_random_bytes(16).hex_encode()
 		key = _pending_keys[signature]
 	var result: Dictionary = await request_backend(command, payload, key)
-	if not key.is_empty() and result.code not in ["NETWORK_ERROR", "INTERNAL_ERROR", "BACKEND_UNAVAILABLE"]:
+	if not key.is_empty() and result.code not in ["NETWORK_ERROR", "INTERNAL_ERROR", "BACKEND_UNAVAILABLE", "INVALID_RESPONSE", "HTTP_ERROR"]:
 		_pending_keys.erase(command + ":" + JSON.stringify(payload, "", true))
 	if not result.ok:
 		return result
 	if _context == null or session != _session:
 		return Result.failure("SESSION_CHANGED", "请求期间账号已切换，结果未写入当前投影")
+	if command == "growth.market_list" or command in MARKET_WRITES:
+		return result
 	var data: Dictionary = result.data
 	var state: Dictionary = snapshot()
 	if command == "growth.list":

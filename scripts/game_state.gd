@@ -48,6 +48,7 @@ var family_identity: Dictionary = {}
 var family_save: Callable = Callable()
 # 正式模式：已登录 C 的角色 ID。非空时资源、装备与奖励只由服务端确认，本地只是读模型缓存。
 var cultivator_id: String = ""
+var adventure: Dictionary = {}
 const REMOTE_RARITIES = ["common", "fine", "epic", "legendary", "mythic"]
 const REMOTE_ONLY = "正式账号的灵气、装备与每日奖励由游戏服务确认，请稍后重试。"
 
@@ -154,6 +155,7 @@ func is_remote() -> bool:
 func apply_remote(character: Dictionary) -> void:
 	if str(character.get("cultivator_id", "")) != cultivator_id:
 		return
+	adventure = character.adventure.duplicate(true) if character.get("adventure") is Dictionary else {}
 	var remote_baseline = character.get("baseline")
 	if remote_baseline is Dictionary and str(remote_baseline.get("baseline_id", "")) != health_profile_id:
 		var payload = {"baseline_id": remote_baseline.get("baseline_id"), "baseline_version": "char_baseline_v1", "baseline_locked": true, "recognition_mode": remote_baseline.get("recognition_mode"), "mapping_version": remote_baseline.get("mapping_version", ""), "character_state": remote_baseline.get("character_state"), "readiness": remote_baseline.get("readiness"), "display_name": ""}
@@ -167,6 +169,9 @@ func apply_remote(character: Dictionary) -> void:
 			health_source = HealthBaseline.source_label(health_baseline)
 	var resources = character.get("resources", {})
 	equipment.qi = int(resources.get("spirit_stones", 0))
+	equipment.materials = int(resources.get("materials", 0))
+	equipment.legendary_pity = int(character.get("legendary_pity", 0))
+	equipment.wish_school = int(character.get("wish_school", -1))
 	cultivation = int(resources.get("realm_xp", 0))
 	seals = int(resources.get("seals", 0))
 	days = int(character.get("days", 0))
@@ -184,6 +189,13 @@ func apply_remote(character: Dictionary) -> void:
 		if not str(item.get("catalogue_id", "")).begins_with("pixel:") or template < 0 or template >= Equipment.TEMPLATES.size() or rarity < 0:
 			continue
 		var entry = {"id": str(item.equipment_id), "template": template, "rarity": rarity}
+		if int(item.get("school", -1)) >= 0:
+			entry["school"] = int(item.school)
+		if int(item.get("upgrade_level", 0)) > 0:
+			entry["upgrade_level"] = int(item.upgrade_level)
+		var listing_id := str(item.get("market_listing_id", ""))
+		if not listing_id.is_empty():
+			entry["market_listing_id"] = listing_id
 		inventory.append(entry)
 		if int(item.get("equipped", 0)) == 1:
 			equipped[Equipment.TEMPLATES[template].slot] = entry.id
@@ -232,10 +244,19 @@ func draw_equipment(count: int, request_id: String) -> Dictionary:
 	var before = equipment.duplicate(true)
 	var items = []
 	var best_rarity = 0
+	var pity := int(equipment.get("legendary_pity", 0))
 	for i in range(count):
 		var rarity = Equipment.roll_rarity(float(equipment.initial_score), equipment_rng)
+		if rarity < 3 and pity + 1 >= int(Equipment.GROWTH.legendary_hard):
+			rarity = 3
+		elif rarity < 3 and pity >= int(Equipment.GROWTH.legendary_soft_start) and equipment_rng.randf() < (pity - float(Equipment.GROWTH.legendary_soft_start) + 1) * float(Equipment.GROWTH.legendary_soft_step):
+			rarity = 3
+		pity = 0 if rarity >= 3 else pity + 1
 		best_rarity = maxi(best_rarity, rarity)
-		items.append(Equipment.make_item(int(equipment.next_id) + i, rarity, equipment_rng))
+		var item := Equipment.make_item(int(equipment.next_id) + i, rarity, equipment_rng)
+		var focus := int(equipment.get("wish_school", -1))
+		item["school"] = focus if focus >= 0 else equipment_rng.randi_range(0, Equipment.GROWTH.schools.size() - 1)
+		items.append(item)
 	var guaranteed = count == 10 and best_rarity < 2
 	if guaranteed:
 		# Upgrade the last card, never downgrade a naturally rolled legendary/mythic.
@@ -245,6 +266,7 @@ func draw_equipment(count: int, request_id: String) -> Dictionary:
 		equipment.starter_ten_pulls = maxi(0, int(equipment.starter_ten_pulls) - 1)
 	equipment.next_id += count
 	equipment.draw_count += count
+	equipment.legendary_pity = pity
 	equipment.inventory.append_array(items)
 	var receipt = {"ok": true, "request_id": request_id, "count": count, "cost": cost, "items": items.duplicate(true), "guaranteed": guaranteed, "starter_bonus": starter_bonus}
 	equipment.receipts[request_id] = receipt

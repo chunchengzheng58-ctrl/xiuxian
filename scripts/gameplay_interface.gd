@@ -3,6 +3,14 @@ extends "res://scripts/pixel_interface.gd"
 const Assets = preload("res://scripts/pixel_assets.gd")
 const TrialCatalogue = preload("res://scripts/trial_catalogue.gd")
 const Combat = preload("res://scripts/combat_view.gd")
+const SocialPanel = preload("res://scripts/social_panel.gd")
+const DuelLobby = preload("res://scripts/duel_lobby.gd")
+const DuelView = preload("res://scripts/duel_view.gd")
+const MatchmakingLobby = preload("res://scripts/matchmaking_lobby.gd")
+const ExpeditionLobby = preload("res://scripts/expedition_lobby.gd")
+const ExpeditionView = preload("res://scripts/expedition_view.gd")
+const StoryPanel = preload("res://scripts/story_panel.gd")
+const SettingsPanel = preload("res://scripts/settings_panel.gd")
 var start_screen: ColorRect
 var selected_avatar: String = "male"
 var avatar_buttons: Array[Button] = []
@@ -20,6 +28,12 @@ var account_panel: Control
 var return_to_health_entry = false
 var companion_panel: Control
 var companion_button: Button
+var social_button: Button
+var duel_button: Button
+var duel_view: Control
+var expedition_view: Control
+var story_panel: Control
+var settings_panel: CanvasLayer
 var wechat_task_label: Label
 var lifecycle_panel: Control
 var lifecycle_gateway: Node
@@ -29,6 +43,10 @@ var guest_task_done := false
 
 func _ready() -> void:
 	super._ready()
+	get_node("/root/GameOptions").settings_requested.connect(open_settings)
+	var settings_button := button(self, "设置 · F9", open_settings)
+	settings_button.position = Vector2(994, 23)
+	settings_button.size = Vector2(151, 46)
 	game.account_api.completed.connect(on_account_result)
 	game.account_api.progress.connect(on_account_progress)
 	var menu_button = button(self, "我的家人 / 切换角色", open_family)
@@ -46,6 +64,15 @@ func _ready() -> void:
 	var lifecycle_button = button(self, "渡劫台 / 修行状态", open_recovery)
 	lifecycle_button.position = Vector2(16, 506)
 	lifecycle_button.size.x = 276
+	social_button = button(self, "同道录 / 好友", open_social)
+	social_button.position = Vector2(16, 572)
+	social_button.size.x = 276
+	duel_button = button(self, "论剑台 / 对战", open_arena)
+	duel_button.position = Vector2(16, 638)
+	duel_button.size.x = 276
+	var expedition_button = button(self, "五域游历 / 主线", open_story)
+	expedition_button.position = Vector2(16, 704)
+	expedition_button.size.x = 276
 	var args = OS.get_cmdline_user_args()
 	if "--skip-intro" not in args and "--preview" not in args:
 		open_game_entry.call_deferred()
@@ -53,6 +80,16 @@ func _ready() -> void:
 func refresh() -> void:
 	super.refresh()
 	refresh_companion_button()
+	if is_instance_valid(social_button):
+		var summary: Dictionary = game.account_api.social_summary
+		var notices := int(summary.get("pending_requests", 0)) + int(summary.get("unread_messages", 0))
+		social_button.text = "同道录 / 好友" + (" · %d" % notices if notices > 0 else "")
+	if is_instance_valid(duel_button):
+		var summary: Dictionary = game.account_api.duel_summary
+		var notice: String = " · 待入场" if summary.get("active", false) else (" · 匹配中" if summary.get("queued", false) else (" · 新约战" if int(summary.get("invitations", 0)) > 0 else ""))
+		duel_button.text = "论剑台 / 对战" + notice
+	if is_instance_valid(treasure):
+		treasure.refresh_market_wallet()
 	if is_instance_valid(hud_avatar_image):
 		hud_avatar_image.texture = game.portrait
 		hud_name_label.text = game.state.player_name
@@ -97,7 +134,135 @@ func open_companion(choose: bool = false) -> void:
 	companion_panel.choose_mode = choose
 	add_child(companion_panel)
 
+func open_social() -> void:
+	if require_family() or not can_change_family():
+		return
+	var content := _dialog("同道录", "用独立的社交昵称结识同道。交换邀请码后，由对方确认好友申请。")
+	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
+		paragraph(content, "登录游戏账号并切换到本人角色后，即可使用同道录。", 20)
+		return
+	var panel = SocialPanel.new()
+	panel.game = game
+	panel.ui = self
+	panel.cultivator_id = game.state.cultivator_id
+	content.add_child(panel)
+
+func open_arena() -> void:
+	var summary: Dictionary = game.account_api.duel_summary
+	if int(summary.get("invitations", 0)) > 0 or summary.get("active_mode") == "friendly":
+		open_duel_lobby()
+	else:
+		open_matchmaking_lobby()
+
+func open_matchmaking_lobby() -> void:
+	if require_family() or not can_change_family():
+		return
+	var content := _dialog("论剑台 · 匹配对战", "寻找在线同道，公平切磋，积累属于你的论剑战绩。")
+	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
+		paragraph(content, "登录游戏账号并切换到本人角色后，即可参加匹配。", 20)
+		return
+	var lobby = MatchmakingLobby.new()
+	lobby.game = game
+	lobby.ui = self
+	lobby.cultivator_id = game.state.cultivator_id
+	content.add_child(lobby)
+
+func open_duel_lobby(friend_id: String = "") -> void:
+	if require_family() or not can_change_family():
+		return
+	var content := _dialog("论剑台", "好友实时切磋 · 双方使用同一套基础数值 · 一局 90 秒")
+	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
+		paragraph(content, "登录游戏账号并切换到本人角色后，即可约战好友。", 20)
+		return
+	var lobby = DuelLobby.new()
+	lobby.game = game
+	lobby.ui = self
+	lobby.cultivator_id = game.state.cultivator_id
+	lobby.initial_friend = friend_id
+	content.add_child(lobby)
+
+func open_duel_battle(match_id: String) -> void:
+	close_modal()
+	modal_open = true
+	game.player.blocked = true
+	duel_view = DuelView.new()
+	duel_view.game = game
+	duel_view.ui = self
+	duel_view.match_id = match_id
+	duel_view.cultivator_id = game.state.cultivator_id
+	add_child(duel_view)
+
+func open_story(chapter_id: String = "") -> void:
+	if require_family() or not can_change_family():
+		return
+	var content := _dialog("五域归衡 · 主线游历", "循线索游历五域，取得归衡印，完成守灯人的旅程。")
+	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
+		paragraph(content, "登录游戏账号并切换到本人角色后，即可保存主线与冒险等级。", 20)
+		return
+	story_panel = StoryPanel.new()
+	story_panel.game = game
+	story_panel.ui = self
+	story_panel.cultivator_id = game.state.cultivator_id
+	story_panel.chapter_id = chapter_id
+	content.add_child(story_panel)
+
+func open_settings() -> void:
+	if is_instance_valid(settings_panel) and not settings_panel.is_queued_for_deletion():
+		return
+	settings_panel = SettingsPanel.new()
+	settings_panel.game = game
+	settings_panel.ui = self
+	add_child(settings_panel)
+
+func open_expedition_lobby(chapter_id: String = "") -> void:
+	if require_family() or not can_change_family():
+		return
+	var content := _dialog("五域秘境", "二十场正式挑战，通关获取历练、装备与锻材，推动五域归衡。")
+	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
+		paragraph(content, "登录游戏账号并切换到本人角色后，即可进入秘境探索。", 20)
+		return
+	var lobby = ExpeditionLobby.new()
+	lobby.game = game
+	lobby.ui = self
+	lobby.cultivator_id = game.state.cultivator_id
+	lobby.chapter_id = chapter_id
+	content.add_child(lobby)
+
+func open_expedition_battle(run_id: String) -> void:
+	close_modal()
+	modal_open = true
+	game.player.blocked = true
+	game.player.route.clear()
+	expedition_view = ExpeditionView.new()
+	expedition_view.game = game
+	expedition_view.ui = self
+	expedition_view.run_id = run_id
+	expedition_view.cultivator_id = game.state.cultivator_id
+	add_child(expedition_view)
+
 func close_modal(force: bool = false) -> void:
+	if not force and is_instance_valid(story_panel) and story_panel.busy:
+		toast("正在保存章节进度，请稍候。")
+		return
+	if not force and is_instance_valid(treasure) and treasure.is_submitting():
+		toast("正在保存装备操作，请稍候。")
+		return
+	if is_instance_valid(expedition_view):
+		if not force and not expedition_view.can_close():
+			expedition_view.request_leave()
+			return
+		expedition_view.set_process(false)
+		expedition_view.set_process_input(false)
+		expedition_view.queue_free()
+		expedition_view = null
+	if is_instance_valid(duel_view):
+		if not force and not duel_view.can_close():
+			duel_view.request_leave()
+			return
+		duel_view.set_process(false)
+		duel_view.set_process_input(false)
+		duel_view.queue_free()
+		duel_view = null
 	if is_instance_valid(lifecycle_panel) and lifecycle_panel.busy and not force:
 		toast("正在保存家属确认，请稍候。")
 		return
@@ -138,6 +303,9 @@ func close_modal(force: bool = false) -> void:
 		corridor.set_process_input(false)
 		corridor.queue_free()
 	corridor = null
+	if is_instance_valid(story_panel):
+		story_panel.queue_free()
+	story_panel = null
 	if is_instance_valid(combat):
 		combat.set_process(false)
 		combat.set_process_input(false)
@@ -166,7 +334,13 @@ func _dialog(title: String, subtitle: String) -> VBoxContainer:
 	modal.color = Color(0.12, 0.08, 0.06, 0.65)
 	add_child(modal)
 	modal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var content = card(Rect2(270, 112, 900, 686), modal)
+	var content: VBoxContainer
+	if preload("res://scripts/family_panel.gd").uses_touch_layout():
+		var scroll := preload("res://scripts/family_panel.gd").form_scroll(modal, 1270)
+		content = card(Rect2(), scroll)
+		content.get_parent().size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		content = card(Rect2(270, 112, 900, 686), modal)
 	var row = HBoxContainer.new()
 	content.add_child(row)
 	var title_label = label_into(row, title, 29)
@@ -489,6 +663,9 @@ func open_health_entry() -> void:
 func open_home() -> void:
 	if require_family():
 		return
+	if game.state.is_remote() and game.state.family_member_id == "self":
+		open_adventure_home()
+		return
 	var state = game.state
 	var content = _dialog(state.player_name + "档案 · 健康与修行", "健康档案形成五项属性；新的评估结果会更新下一场战斗的角色能力。")
 	content.add_theme_constant_override("separation", 8)
@@ -547,6 +724,33 @@ func open_home() -> void:
 	button(actions, "前往演武台", open_battle)
 	button(actions, "记录今日计划", open_record)
 	button(actions, "行囊与装备", func(): open_treasure("bag"))
+
+func open_adventure_home() -> void:
+	if not can_change_family():
+		return
+	var id: String = game.state.cultivator_id
+	var content := _dialog("本人成长 · 冒险与装备", "正式秘境使用冒险等级与穿戴装备，论剑使用统一数值。")
+	var panel := modal
+	var details := paragraph(content, "正在读取正式冒险属性…", 20)
+	button(content, "五域游历 · 继续主线", open_story, true)
+	button(content, "行囊与锻造", open_treasure.bind("forge"))
+	paragraph(content, "家人的健康档案可从「我的家人」切换查看。属性长廊与演武使用各自的档案属性，正式秘境的成长与奖励保存在游戏服务。", 17)
+	var core := get_tree().root.get_node("GameKernel")
+	var result: Dictionary = await core.dispatch("combat.expedition_lobby", {"cultivator_id": id})
+	if not is_instance_valid(panel) or panel.is_queued_for_deletion() or modal != panel or game.state.cultivator_id != id:
+		return
+	if not result.ok:
+		details.text = result.message
+		button(content, "重新读取", open_adventure_home)
+		return
+	var adventure: Dictionary = result.data.get("adventure", {})
+	var loadout: Dictionary = result.data.get("loadout", {})
+	if loadout.is_empty():
+		details.text = "当前游戏服务尚未提供冒险属性预览，请更新服务后重试。"
+		return
+	var rules := preload("res://scripts/adventure_catalogue.gd")
+	details.text = rules.level_text(adventure) + "\n" + rules.progress_text(adventure) + "\n\n等级基础属性\n" + rules.stats_text(loadout.base_stats) + "\n\n当前装备与套装加成\n" + rules.stats_text(loadout.equipment_bonuses) + "\n\n下次秘境入场属性\n" + rules.stats_text(loadout.stats)
+	details.tooltip_text = "以游戏服务当前等级与穿戴记录为准，每次入场重新生成快照。"
 
 func use_mock_profile(score: int) -> void:
 	var payload = game.state.HealthProfile.mock(score, game.state.health_revision + 1)
@@ -691,7 +895,7 @@ func open_site(id: String) -> void:
 		super.open_site(id)
 
 func open_treasure(view: String = "wish") -> void:
-	if require_family():
+	if require_family() or not can_change_family():
 		return
 	close_modal()
 	modal_open = true
@@ -712,10 +916,22 @@ func require_family() -> bool:
 	return false
 
 func can_change_family() -> bool:
+	if is_instance_valid(story_panel) and story_panel.busy:
+		toast("请等待章节进度保存完成。")
+		return false
+	if is_instance_valid(treasure) and treasure.is_submitting():
+		toast("请等待本次装备操作完成。")
+		return false
+	if is_instance_valid(expedition_view) and not expedition_view.can_close():
+		toast("请先结束当前秘境挑战。")
+		return false
+	if is_instance_valid(duel_view) and not duel_view.can_close():
+		toast("请先结束当前论剑。")
+		return false
 	if is_instance_valid(lifecycle_panel) and (lifecycle_panel.busy or lifecycle_panel._dialog.visible):
 		toast("请先确认或取消当前操作，再切换家人。")
 		return false
-	if is_instance_valid(combat):
+	if is_instance_valid(combat) and not combat.rules.finished:
 		toast("请先结束或退出当前战斗，再切换家人。")
 		return false
 	if is_instance_valid(health_entry) and health_entry.busy:
@@ -939,17 +1155,22 @@ func on_account_result(action: String, result: Dictionary) -> void:
 	if is_instance_valid(account_panel):
 		account_panel.clear_passwords()
 	var roster = game.FamilyRoster.new()
+	var expected_generation: int = game.account_api.generation
 	roster.cache_root_override = game.account_cache_root_override
 	roster.legacy_source_override = game.account_legacy_source_override
 	var prepared = roster.open_account(result.account)
 	if prepared.ok:
 		# C 是本人与两位老人的权威来源；本机文件只作展示缓存。
 		var synced = await game.account_api.sync_family(roster)
+		if expected_generation != game.account_api.generation or not game.account_api.is_authenticated() or str(game.account_api.account.get("id", "")) != str(roster.account.id):
+			roster.dispose()
+			return
 		if not synced.ok:
 			prepared = {"ok": false, "message": str(synced.get("message", "无法读取游戏服务中的家族角色。"))}
 	if not prepared.ok:
 		roster.dispose()
-		account_panel.status_label.text = prepared.message
+		if is_instance_valid(account_panel):
+			account_panel.status_label.text = prepared.message
 		return
 	game.pending_account_roster = roster
 	if prepared.needs_import:
@@ -959,7 +1180,7 @@ func on_account_result(action: String, result: Dictionary) -> void:
 		finish_account_setup(false)
 
 func import_old_account() -> void:
-	if game.pending_account_roster == null or game.account_api.busy:
+	if game.pending_account_roster == null or game.account_api.busy or game.pending_account_roster.setup_in_progress:
 		return
 	var source = game.pending_account_roster.legacy_snapshot()
 	if not source.ok:
@@ -971,13 +1192,33 @@ func import_old_account() -> void:
 
 func finish_account_setup(import_old: bool) -> void:
 	var roster = game.pending_account_roster
-	if roster == null:
+	if roster == null or roster.setup_in_progress:
 		return
+	roster.setup_in_progress = true
+	if is_instance_valid(account_panel):
+		account_panel.submit_button.disabled = true
 	if not import_old:
 		roster.legacy_choice_made = true
 	if not (roster.import_legacy() if import_old else roster.save_game()):
-		account_panel.status_label.text = roster.last_error
+		roster.setup_in_progress = false
+		if is_instance_valid(account_panel):
+			account_panel.submit_button.disabled = false
+			account_panel.status_label.text = roster.last_error
 		return
+	if roster.is_service_account():
+		var expected_generation: int = game.account_api.generation
+		var synced: Dictionary = await game.account_api.sync_family(roster)
+		if game.pending_account_roster != roster or expected_generation != game.account_api.generation:
+			roster.setup_in_progress = false
+			return
+		if not synced.ok or not game.account_api.is_authenticated() or str(game.account_api.account.get("id", "")) != str(roster.account.id) or not roster.is_remote():
+			roster.setup_in_progress = false
+			if is_instance_valid(account_panel):
+				account_panel.submit_button.disabled = false
+				account_panel.status_label.text = "旧档已备份；" if import_old and not roster.legacy_archive.is_empty() else ""
+				account_panel.status_label.text += str(synced.get("message", "账号角色同步未完成，请重试。")) if not synced.ok else "账号角色同步未完成，请重新登录。"
+			return
+	roster.setup_in_progress = false
 	close_modal(true)
 	game.family.dispose()
 	game.family = roster

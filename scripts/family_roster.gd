@@ -15,6 +15,8 @@ var legacy_source_override = ""
 var legacy_candidates_override = PackedStringArray()
 var legacy_record: Dictionary = {}
 var legacy_choice_made = false
+var legacy_archive: Dictionary = {}
+var setup_in_progress := false
 var account = {"id": "local-child", "name": "我的守护账号"}
 var persist_enabled = true
 var save_file_override = ""
@@ -111,6 +113,7 @@ func open_account(identity: Dictionary) -> Dictionary:
 	load_blocked = false
 	last_error = ""
 	legacy_choice_made = false
+	legacy_archive.clear()
 	account = identity.duplicate(true)
 	account.name = str(identity.get("display_name", identity.get("username", "我的账号")))
 	account_bound = true
@@ -144,6 +147,10 @@ func import_legacy() -> bool:
 	if not source.ok:
 		last_error = source.message
 		return false
+	if is_service_account():
+		# An untrusted local save is retained for offline recovery, never installed
+		# as the live projection of an authenticated economy account.
+		return archive_service_legacy(source)
 	var authenticated = account.duplicate(true)
 	var old_override = save_file_override
 	save_file_override = source.path
@@ -154,6 +161,30 @@ func import_legacy() -> bool:
 	account = authenticated
 	if load_blocked:
 		return false
+	legacy_choice_made = true
+	return save_game()
+
+func is_service_account() -> bool:
+	return account_bound and str(account.get("id", "")).begins_with("account_")
+
+func archive_service_legacy(source: Dictionary) -> bool:
+	var document := Privacy.read(source.path, persist_enabled, true)
+	if not document.ok or document.get("disk_digest", "") != legacy_record.digest:
+		last_error = "旧存档已变化或无法读取，请重新登录后检查。"
+		return false
+	var archive_path := cache_root().path_join("legacy-archives").path_join(str(account.id)).path_join(str(source.fingerprint) + ".json")
+	if persist_enabled:
+		if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(archive_path.get_base_dir())) != OK:
+			last_error = "无法创建旧档备份目录，尚未进入账号。"
+			return false
+		if FileAccess.file_exists(archive_path):
+			if FileAccess.get_file_as_string(archive_path) != document.text:
+				last_error = "已有旧档副本与当前来源不一致，两个文件均已保留，请检查后重试。"
+				return false
+		elif not Privacy.write_atomic(archive_path, document.text):
+			last_error = "旧档备份失败，原文件已保留，尚未进入账号。"
+			return false
+	legacy_archive = {"path": archive_path, "fingerprint": source.fingerprint, "digest": str(document.disk_digest)}
 	legacy_choice_made = true
 	return save_game()
 
@@ -298,9 +329,14 @@ static func remote_profile(identity: Dictionary) -> Dictionary:
 ## C 是家族角色的权威来源：本人与两位老人按 cultivator_id 对应。只在本机存在的老人补建到 C，再用服务端快照刷新钱包、装备与初始投影。
 func apply_remote(cultivators: Array, core: Node) -> Dictionary:
 	var remote = {}
+	var owners := 0
 	for character in cultivators:
 		if character is Dictionary and character.get("role") in ["self", "elder"]:
 			remote[str(character.cultivator_id)] = character
+			if character.role == "self" and not str(character.cultivator_id).is_empty():
+				owners += 1
+	if is_service_account() and owners != 1:
+		return {"ok": false, "code": "INVALID_RESPONSE", "message": "服务端本人角色不完整，请重新登录后重试。"}
 	for character in remote.values():
 		if character.role == "self":
 			owner_state.cultivator_id = str(character.cultivator_id)
@@ -390,7 +426,7 @@ func to_data() -> Dictionary:
 	var records = []
 	for member in members:
 		records.append({"id": member.id, "identity": member.state.family_identity.duplicate(true), "progress": member.state.to_data()})
-	return Privacy.clean({"schema": 8, "companion": Companions.clean(companion), "legacy_choice_made": legacy_choice_made, "account": account.duplicate(true), "owner": {"identity": owner_state.family_identity.duplicate(true), "progress": owner_state.to_data()}, "active_member_id": active_id, "members": records})
+	return Privacy.clean({"schema": 8, "companion": Companions.clean(companion), "legacy_choice_made": legacy_choice_made, "legacy_archive": legacy_archive.duplicate(true), "account": account.duplicate(true), "owner": {"identity": owner_state.family_identity.duplicate(true), "progress": owner_state.to_data()}, "active_member_id": active_id, "members": records})
 
 func save_game() -> bool:
 	for state in [owner_state] + members.map(func(member): return member.state):
@@ -450,6 +486,7 @@ func load_game(fallback_state, expected_digest: String = "") -> void:
 	account = staged.account
 	companion = staged.companion
 	legacy_choice_made = staged.legacy_choice_made
+	legacy_archive = staged.legacy_archive
 	load_blocked = false
 	last_error = ""
 	owner_state.family_save = save_game
@@ -478,6 +515,7 @@ func load_staged(fallback_state, expected_digest: String = "") -> void:
 	var original = document.text
 	var data = document.data
 	legacy_choice_made = data.get("legacy_choice_made", false) == true
+	legacy_archive = data.get("legacy_archive", {}).duplicate(true) if data.get("legacy_archive") is Dictionary else {}
 	companion = Companions.clean(data.get("companion", {}))
 	if int(data.get("schema", 1)) > 8:
 		last_error = "存档版本较新，请使用对应版本的游戏。"

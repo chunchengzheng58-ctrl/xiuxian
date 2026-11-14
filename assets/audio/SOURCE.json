@@ -1,0 +1,29 @@
+{
+  "origin": "Original synthesized score created for 疯狂修仙，中; no third-party audio samples.",
+  "generator": "tools/generate-game-music.mjs",
+  "license": "Project-original audio; distributed with the game.",
+  "tracks": [
+    {
+      "name": "village_loop.wav",
+      "seconds": 32,
+      "sample_rate": 22050,
+      "channels": 1,
+      "bits": 16,
+      "peak": 0.28,
+      "rms": 0.07231411081183209,
+      "seam_step": 0.00152587890625,
+      "sha256": "ebe847d5ec8ad325becfb7a6bc6f40dfc94bb1bf2fe39ba27e3d988bec074c14"
+    },
+    {
+      "name": "battle_loop.wav",
+      "seconds": 32,
+      "sample_rate": 22050,
+      "channels": 1,
+      "bits": 16,
+      "peak": 0.28,
+      "rms": 0.072835100982328,
+      "seam_step": 0.014434814453125,
+      "sha256": "4147a06655c3f168b90409834cccf27a5c2d0a684a01bc059ba6f5a6458a5b9c"
+    }
+  ]
+}

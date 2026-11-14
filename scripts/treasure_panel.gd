@@ -1,6 +1,8 @@
 extends Control
 const Rules = preload("res://scripts/equipment_rules.gd")
 const Icon = preload("res://scripts/equipment_icon.gd")
+const Market = preload("res://scripts/equipment_market_panel.gd")
+const Forge = preload("res://scripts/equipment_forge_panel.gd")
 const CREAM = Color("f5e8d0")
 const MUTED_TEXT = Color("b7b0a8")
 const GOLD_TEXT = Color("edd096")
@@ -11,13 +13,24 @@ var tab = "wish"
 var selected_id = ""
 var selected_slot = "all"
 var busy = false
+var submitting_draw := false
+var submitting_wish := false
+var submitting_equipment := false
+var forge_panel: Control
+var market_panel: Control
 var reveal_tween: Tween
 var result_cards: Array[Control] = []
 var single_button: Button
 var ten_button: Button
+var wish_focus: OptionButton
 var skip_button: Button
 var result_grid: GridContainer
 var status_label: Label
+var market_offer: Dictionary = {}
+var market_scope: String = "browse"
+var market_balance: Label
+var bag_tab: Button
+var wish_projection: String = ""
 
 class GachaRevealFX extends Control:
 	var rarity: int = 0
@@ -162,7 +175,7 @@ func box(color: Color = SURFACE, border: Color = Color("514837"), width: int = 1
 	result.content_margin_bottom = 14
 	return result
 
-func panel_at(rect: Rect2, color: Color = SURFACE) -> VBoxContainer:
+func panel_at(rect: Rect2, color: Color = SURFACE, scroll_content: bool = false) -> VBoxContainer:
 	var panel = PanelContainer.new()
 	panel.position = rect.position
 	panel.size = rect.size
@@ -170,7 +183,14 @@ func panel_at(rect: Rect2, color: Color = SURFACE) -> VBoxContainer:
 	add_child(panel)
 	var column = VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
-	panel.add_child(column)
+	if scroll_content:
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		panel.add_child(scroll)
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(column)
+	else:
+		panel.add_child(column)
 	return column
 
 func text(parent: Node, value: String, font_size: int = 18, color: Color = CREAM) -> Label:
@@ -210,6 +230,9 @@ func action(parent: Node, value: String, callback: Callable, primary: bool = fal
 	return button
 
 func build() -> void:
+	wish_projection = wish_projection_signature()
+	forge_panel = null
+	market_panel = null
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -233,11 +256,33 @@ func build() -> void:
 	subtitle.clip_text = true
 	subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	action(row, "祈愿装备", func(): switch_tab("wish"), tab == "wish")
-	action(row, "我的行囊 · %d" % game.state.equipment.inventory.size(), func(): switch_tab("bag"), tab == "bag")
+	bag_tab = action(row, "我的行囊 · %d" % game.state.equipment.inventory.size(), func(): switch_tab("bag"), tab == "bag")
+	action(row, "万宝集", open_market, tab == "market")
+	action(row, "锻造台", func(): switch_tab("forge"), tab == "forge")
 	action(row, "返回仙村 ×", ui.close_modal)
-	var left = panel_at(Rect2(90, 138, 320, 696))
+	var left = panel_at(Rect2(90, 138, 320, 696), SURFACE, true)
 	text(left, "灵气", 17, MUTED_TEXT)
-	text(left, str(game.state.equipment.qi), 44, GOLD_TEXT)
+	var balance = text(left, str(game.state.equipment.qi), 44, GOLD_TEXT)
+	market_balance = balance
+	if tab in ["market", "forge"]:
+		paragraph_text(left, "用灵气向其他玩家购买装备。\n在行囊选择未穿戴的装备即可定价上架。" if tab == "market" else "分解闲置装备可以获得锻材。\n强化最高 +10，铭刻可以组成 2 件与 4 件套装。", 17)
+		paragraph_text(left, "挂单期间装备无法穿戴。售出后灵气进入卖方钱包，装备进入买方行囊。" if tab == "market" else "三种流派分别偏重生存、剑诀和踏云。装备加成在下一场 PvE 战斗生效。", 16)
+		action(left, "打开我的行囊", func(): switch_tab("bag"))
+		if tab == "forge":
+			var forge = Forge.new()
+			forge.host = self
+			forge.selected_id = selected_id
+			forge_panel = forge
+			panel_at(Rect2(428, 138, 922, 696)).add_child(forge)
+			return
+		var market = Market.new()
+		market_panel = market
+		market.host = self
+		market.offer = market_offer
+		market.scope = market_scope
+		market_offer = {}
+		panel_at(Rect2(428, 138, 922, 696)).add_child(market)
+		return
 	var progress = ProgressBar.new()
 	progress.custom_minimum_size.y = 9
 	progress.max_value = Rules.TEN_COST
@@ -266,9 +311,14 @@ func build() -> void:
 			text(odds_row, "%.2f%%" % odds[i], 16)
 		paragraph_text(left, "初始基础属性参与成长扶持。概率已固定，后续属性改善不会降低待遇。", 14)
 	else:
-		paragraph_text(left, "确认基础档案后显示概率。初始基础属性越低，优质装备的基础概率越高。", 16)
+		if market_available():
+			paragraph_text(left, "首次进入秘境即可启用游戏基础规则并开启祈愿，无需体检。也可以先确认基础档案。", 16)
+			action(left, "前往秘境开启修行", ui.open_expedition_lobby, true)
+		else:
+			paragraph_text(left, "确认基础档案后显示概率。初始基础属性越低，优质装备的基础概率越高。", 16)
 		action(left, "建立基础档案", ui.open_home, true)
 	paragraph_text(left, "十连至少一件史诗或以上。\n以上为保底前概率；保底只提升品质。", 14, GOLD_TEXT)
+	paragraph_text(left, "新版累计祈愿最多 50 抽获得传说或以上，第 31 抽起逐步提高传说获得机会。", 14, GOLD_TEXT)
 	text(left, "累计祈愿  %d 次" % game.state.equipment.draw_count, 15, MUTED_TEXT)
 	if tab == "wish":
 		build_wish()
@@ -276,9 +326,65 @@ func build() -> void:
 		build_bag()
 
 func switch_tab(next_tab: String) -> void:
+	if is_submitting():
+		ui.toast("装备操作正在保存，请稍候。")
+		return
 	finish_reveal()
 	tab = next_tab
 	build()
+
+func is_submitting() -> bool:
+	return submitting_draw or submitting_wish or submitting_equipment or (is_instance_valid(forge_panel) and forge_panel.busy) or (is_instance_valid(market_panel) and market_panel.submitting)
+
+## 写回执可能早于另一端的交易或奖励。读取带账号版本的完整快照，
+## 再从内核的单调投影取当前角色，避免迟到的回执/读请求回滚钱包。
+func sync_authoritative_character(state) -> Dictionary:
+	var core := get_tree().root.get_node("GameKernel")
+	var listed: Dictionary = await core.dispatch("growth.list", {})
+	if not listed.ok:
+		return listed
+	if not is_inside_tree() or is_queued_for_deletion():
+		return {"ok": false, "code": "SESSION_CHANGED", "message": "界面已关闭"}
+	var latest: Dictionary = core.snapshot("growth")
+	for character in latest.get("cultivators", []):
+		if str(character.get("cultivator_id", "")) == state.cultivator_id:
+			state.apply_remote(character)
+			return {"ok": true}
+	return {"ok": false, "code": "INVALID_RESPONSE", "message": "尚未同步当前角色"}
+
+func market_available() -> bool:
+	return game.state.family_member_id == "self" and game.state.is_remote() and game.account_api.is_authenticated()
+
+func open_market(offer: Dictionary = {}, scope: String = "browse") -> void:
+	if is_submitting():
+		ui.toast("装备操作正在保存，请稍候。")
+		return
+	market_offer = offer.duplicate()
+	market_scope = scope
+	switch_tab("market")
+
+func sync_market_character() -> bool:
+	var session = game.account_api
+	var synced: Dictionary = await session.sync_family(game.family)
+	if not synced.ok or not is_inside_tree():
+		return false
+	game.state = game.family.active_state()
+	ui.refresh()
+	return true
+
+func refresh_market_wallet() -> void:
+	if is_instance_valid(market_balance):
+		market_balance.text = str(game.state.equipment.qi)
+	if is_instance_valid(bag_tab):
+		bag_tab.text = "我的行囊 · %d" % game.state.equipment.inventory.size()
+	if tab == "wish" and not busy and not is_submitting() and wish_projection != wish_projection_signature():
+		build()
+	if tab == "forge" and is_instance_valid(forge_panel):
+		forge_panel.refresh_projection()
+
+func wish_projection_signature() -> String:
+	var equipment: Dictionary = game.state.equipment
+	return JSON.stringify([game.state.get_instance_id(), equipment.qi, equipment.initial_score, equipment.get("initial_profile_id", ""), equipment.get("legendary_pity", 0), equipment.get("wish_school", -1), equipment.draw_count, equipment.last_request, equipment.get("pending_draw", {})])
 
 func last_receipt() -> Dictionary:
 	return game.state.equipment.receipts.get(game.state.equipment.last_request, {})
@@ -289,11 +395,21 @@ func build_wish() -> void:
 	right.add_child(title)
 	var title_label = text(title, "灵器祈愿", 27, GOLD_TEXT)
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text(title, "四类装备 · 五种品质", 17, MUTED_TEXT)
+	var focus := OptionButton.new()
+	wish_focus = focus
+	focus.add_item("流派随机")
+	for school in Rules.GROWTH.schools:
+		focus.add_item(school.name)
+	focus.select(int(game.state.equipment.get("wish_school", -1)) + 1)
+	focus.add_theme_font_size_override("font_size", 17)
+	focus.disabled = busy or submitting_draw or not game.state.equipment.get("pending_draw", {}).is_empty()
+	focus.item_selected.connect(func(index): set_wish_school(index - 1))
+	title.add_child(focus)
+	text(right, "累计传说保障 %d / 50 · 最多再 %d 抽获得传说或以上" % [int(game.state.equipment.get("legendary_pity", 0)), 50 - int(game.state.equipment.get("legendary_pity", 0))], 16, GOLD_TEXT)
 	var receipt = last_receipt()
 	if receipt.is_empty():
 		var seal = WishSeal.new()
-		seal.custom_minimum_size.y = 148
+		seal.custom_minimum_size.y = 120
 		right.add_child(seal)
 		var introduction = text(right, "每一份坚持，都有回响", 26, GOLD_TEXT)
 		introduction.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -309,7 +425,7 @@ func build_wish() -> void:
 			row.add_child(column)
 			var icon = Icon.new()
 			icon.setup(showcase)
-			icon.custom_minimum_size = Vector2(150, 132)
+			icon.custom_minimum_size = Vector2(150, 112)
 			column.add_child(icon)
 			var label = text(column, info.name, 18, info.color)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -327,7 +443,7 @@ func build_wish() -> void:
 		result_grid.add_theme_constant_override("v_separation", 10)
 		right.add_child(result_grid)
 		for item in receipt.items:
-			result_cards.append(item_card(result_grid, item, Vector2(165, 190)))
+			result_cards.append(item_card(result_grid, item, Vector2(165, 196)))
 		if receipt.guaranteed:
 			text(right, "十连保底已生效 · 至少一件史诗", 16, Rules.COLORS[2])
 	var spacer = Control.new()
@@ -341,10 +457,60 @@ func build_wish() -> void:
 	ten_button = action(actions, "新手赠送 · 免费十连" if int(game.state.equipment.get("starter_ten_pulls", 0)) > 0 else "十连祈愿 · 700", func(): summon(10), true)
 	single_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ten_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	single_button.disabled = busy or int(game.state.equipment.qi) < Rules.SINGLE_COST or float(game.state.equipment.initial_score) < 0
-	ten_button.disabled = busy or (int(game.state.equipment.get("starter_ten_pulls", 0)) <= 0 and int(game.state.equipment.qi) < Rules.TEN_COST) or float(game.state.equipment.initial_score) < 0
 	skip_button = action(actions, "跳过动画", finish_reveal)
 	skip_button.visible = busy
+	refresh_wish_controls()
+	var pending: Dictionary = game.state.equipment.get("pending_draw", {})
+	if not pending.is_empty():
+		status_label.text = "上次祈愿尚待确认，请继续原次数。已结算的结果不会再次扣费。"
+
+func refresh_wish_controls() -> void:
+	var pending: Dictionary = game.state.equipment.get("pending_draw", {})
+	var count := int(pending.get("count", 0))
+	var blocked: bool = busy or is_submitting()
+	var single_ready: bool = count == 1 if count > 0 else int(game.state.equipment.qi) >= Rules.SINGLE_COST and float(game.state.equipment.initial_score) >= 0
+	var ten_ready: bool = count == 10 if count > 0 else (int(game.state.equipment.get("starter_ten_pulls", 0)) > 0 or int(game.state.equipment.qi) >= Rules.TEN_COST) and float(game.state.equipment.initial_score) >= 0
+	if is_instance_valid(wish_focus):
+		wish_focus.disabled = blocked or count > 0
+	if is_instance_valid(single_button):
+		single_button.text = "继续上次单抽" if count == 1 else "祈愿一次 · 70"
+		single_button.disabled = blocked or not single_ready
+	if is_instance_valid(ten_button):
+		ten_button.text = "继续上次十连" if count == 10 else ("新手赠送 · 免费十连" if int(game.state.equipment.get("starter_ten_pulls", 0)) > 0 else "十连祈愿 · 700")
+		ten_button.disabled = blocked or not ten_ready
+
+func set_wish_school(school: int) -> void:
+	if is_submitting() or busy:
+		return
+	if not game.state.equipment.get("pending_draw", {}).is_empty():
+		ui.toast("请先确认上次祈愿结果，再更换流派。")
+		return
+	busy = true
+	submitting_wish = true
+	if game.state.is_remote():
+		var core := get_tree().root.get_node("GameKernel")
+		var result: Dictionary = await core.dispatch("growth.set_wish", {"cultivator_id": game.state.cultivator_id, "school": school})
+		if not result.ok:
+			busy = false
+			submitting_wish = false
+			ui.toast(result.message)
+			build()
+			return
+		var synced := await sync_authoritative_character(game.state)
+		if not synced.ok:
+			busy = false
+			submitting_wish = false
+			ui.toast("铭刻流派已保存，刷新后确认最新行囊。")
+			if is_inside_tree():
+				build()
+			return
+	else:
+		game.state.equipment.wish_school = school
+	game.state.save_game()
+	busy = false
+	submitting_wish = false
+	if is_inside_tree():
+		build()
 
 func item_card(parent: Node, item: Dictionary, dimensions: Vector2) -> Button:
 	var info = Rules.detail(item)
@@ -378,10 +544,15 @@ func item_card(parent: Node, item: Dictionary, dimensions: Vector2) -> Button:
 	column.add_child(icon)
 	var name_label = text(column, info.name, 17)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var bonus = text(column, Rules.bonus_text(item), 15, GOLD_TEXT)
 	bonus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var equipped = game.state.equipment.equipped.get(info.slot, "") == info.id
-	var foot = text(column, "已穿戴" if equipped else Rules.SLOT_NAMES[info.slot], 13, Color("9cceb4") if equipped else MUTED_TEXT)
+	var footnote: String = "已穿戴" if equipped else Rules.SLOT_NAMES[info.slot]
+	if item.has("market_listing_id"):
+		footnote = "在售"
+	var foot = text(column, footnote, 13, Color("9cceb4") if equipped else MUTED_TEXT)
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	for child in column.get_children():
 		if child is Control:
@@ -391,6 +562,8 @@ func item_card(parent: Node, item: Dictionary, dimensions: Vector2) -> Button:
 	reveal_fx.rarity = info.rarity
 	card.add_child(reveal_fx)
 	card.pressed.connect(func():
+		if is_submitting():
+			return
 		finish_reveal()
 		selected_id = info.id
 		tab = "bag"
@@ -399,17 +572,43 @@ func item_card(parent: Node, item: Dictionary, dimensions: Vector2) -> Button:
 	return card
 
 func summon(count: int) -> void:
-	if busy:
+	if busy or is_submitting():
 		return
 	busy = true
+	submitting_draw = true
 	# A receipt is committed before presentation. Reopening always shows that same result.
-	var request_id = "wish_%d_%d_%d" % [Time.get_unix_time_from_system(), Time.get_ticks_usec(), game.state.equipment.next_id]
+	var pending: Dictionary = game.state.equipment.get("pending_draw", {})
+	if not pending.is_empty() and int(pending.count) != count:
+		busy = false
+		submitting_draw = false
+		return
+	var request_id: String = str(pending.get("request_id", "wish_" + Crypto.new().generate_random_bytes(16).hex_encode()))
+	game.state.equipment["pending_draw"] = {"count": count, "request_id": request_id}
+	refresh_wish_controls()
+	if not game.state.save_game():
+		busy = false
+		submitting_draw = false
+		refresh_wish_controls()
+		ui.toast("保存祈愿请求失败，请稍后重试。")
+		return
 	var receipt = await remote_draw(count, request_id) if game.state.is_remote() else game.state.draw_equipment(count, request_id)
+	submitting_draw = false
+	if receipt.ok or receipt.get("code", "") not in ["NETWORK_ERROR", "INTERNAL_ERROR", "INVALID_RESPONSE", "HTTP_ERROR", "BACKEND_UNAVAILABLE"]:
+		game.state.equipment.erase("pending_draw")
+		game.state.save_game()
 	if not receipt.ok:
 		busy = false
-		status_label.text = receipt.message
+		refresh_wish_controls()
+		refresh_market_wallet()
+		if is_instance_valid(status_label):
+			status_label.text = receipt.message
+		ui.toast(receipt.message)
 		return
 	ui.refresh()
+	if tab != "wish":
+		busy = false
+		build()
+		return
 	build()
 	for card in result_cards:
 		card.modulate.a = 0
@@ -427,11 +626,13 @@ func remote_draw(count: int, request_id: String) -> Dictionary:
 	var core = get_tree().root.get_node("GameKernel")
 	var result = await core.dispatch("growth.draw", {"cultivator_id": state.cultivator_id, "count": count, "request_id": request_id})
 	if not result.ok:
-		return {"ok": false, "message": str(result.message)}
-	state.apply_remote(result.data.character)
+		return {"ok": false, "code": result.code, "message": str(result.message)}
+	var latest := await sync_authoritative_character(state)
+	if not latest.ok:
+		return {"ok": false, "code": latest.get("code", "BACKEND_UNAVAILABLE"), "message": "祈愿结果已保存，点击原次数找回结果并同步行囊。"}
 	var items = []
 	for item in result.data.items:
-		items.append({"id": str(item.equipment_id), "template": int(item.template), "rarity": int(item.rarity_index)})
+		items.append({"id": str(item.equipment_id), "template": int(item.template), "rarity": int(item.rarity_index), "school": int(item.get("school", -1)), "upgrade_level": int(item.get("upgrade_level", 0))})
 	var receipt = {"ok": true, "request_id": request_id, "count": count, "cost": int(result.data.cost), "items": items, "guaranteed": result.data.guaranteed == true}
 	state.equipment.receipts[request_id] = receipt
 	state.equipment.last_request = request_id
@@ -439,6 +640,9 @@ func remote_draw(count: int, request_id: String) -> Dictionary:
 	return receipt
 
 func remote_wear(info: Dictionary, equipped: bool) -> Dictionary:
+	if is_submitting():
+		return {"ok": false, "message": "装备操作正在保存，请稍候。"}
+	submitting_equipment = true
 	var state = game.state
 	var core = get_tree().root.get_node("GameKernel")
 	var result: Dictionary
@@ -447,15 +651,19 @@ func remote_wear(info: Dictionary, equipped: bool) -> Dictionary:
 	else:
 		result = await core.dispatch("growth.equip", {"cultivator_id": state.cultivator_id, "equipment_id": info.id, "slot": info.slot})
 	if not result.ok:
+		submitting_equipment = false
 		return {"ok": false, "message": str(result.message)}
-	state.apply_remote(result.data)
+	var latest := await sync_authoritative_character(state)
+	submitting_equipment = false
+	if not latest.ok:
+		return {"ok": false, "message": "装备操作已保存，刷新后确认最新行囊。"}
 	state.save_game()
 	return {"ok": true, "message": ("已卸下装备" if equipped else "已穿戴「%s」" % info.name) + "，下一场战斗生效。"}
 
 func finish_reveal() -> void:
 	if is_instance_valid(reveal_tween) and reveal_tween.is_running():
 		reveal_tween.kill()
-	busy = false
+	busy = is_submitting()
 	for card in result_cards:
 		if is_instance_valid(card):
 			card.modulate.a = 1
@@ -464,10 +672,8 @@ func finish_reveal() -> void:
 				reveal_fx.complete_reveal()
 	if is_instance_valid(skip_button):
 		skip_button.hide()
-	if is_instance_valid(single_button):
-		single_button.disabled = int(game.state.equipment.qi) < Rules.SINGLE_COST or float(game.state.equipment.initial_score) < 0
-	if is_instance_valid(ten_button):
-		ten_button.disabled = (int(game.state.equipment.get("starter_ten_pulls", 0)) <= 0 and int(game.state.equipment.qi) < Rules.TEN_COST) or float(game.state.equipment.initial_score) < 0
+	refresh_wish_controls()
+	refresh_market_wallet()
 
 func build_bag() -> void:
 	var right = panel_at(Rect2(428, 138, 922, 696))
@@ -518,6 +724,8 @@ func build_bag() -> void:
 	build_detail(right)
 
 func select_equipped(slot: String) -> void:
+	if is_submitting():
+		return
 	selected_slot = slot
 	selected_id = str(game.state.equipment.equipped.get(slot, ""))
 	build()
@@ -554,9 +762,25 @@ func build_detail(parent: Node) -> void:
 		comparison = "当前：%s（%s）" % [other.name, Rules.bonus_text(currently)]
 	text(description, comparison, 15, MUTED_TEXT)
 	var equipped = game.state.equipment.equipped.get(info.slot, "") == info.id
-	action(row, "卸下装备" if equipped else "穿戴装备", func():
+	if selected.has("market_listing_id"):
+		action(row, "查看挂单", func(): open_market({}, "mine"))
+		return
+	var actions := VBoxContainer.new()
+	row.add_child(actions)
+	action(actions, "卸下装备" if equipped else "穿戴装备", func():
+		if is_submitting():
+			return
+		for button in actions.get_children():
+			if button is Button:
+				button.disabled = true
 		var result = await remote_wear(info, equipped) if game.state.is_remote() else (game.state.unequip_item(info.slot) if equipped else game.state.equip_item(info.id))
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		ui.toast(result.message)
 		ui.refresh()
 		build()
 	, true)
+	if not equipped and market_available():
+		action(actions, "定价上架", func(): open_market(selected, "mine"))
+	if game.state.is_remote():
+		action(actions, "前往锻造", func(): switch_tab("forge"))

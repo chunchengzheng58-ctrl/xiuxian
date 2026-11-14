@@ -424,7 +424,7 @@ func _landed_hit(burst: Dictionary) -> void:
 		var start := center + ray * radius * (.18 + .61 * age)
 		var end := start + ray * radius * .44 * alpha
 		draw_line(start.snapped(Vector2(3, 3)), end.snapped(Vector2(3, 3)), Color(tint, alpha), 5.0 if i % 3 == 0 else 3.0)
-	if age < .3:
+	if age < .3 and not view._reduced_flash():
 		var flash := 1.0 - age / .3
 		var span := (34.0 if burst.counter else 23.0) * flash
 		var points := PackedVector2Array([center + Vector2(-span, 0), center + Vector2(0, -span), center + Vector2(span, 0), center + Vector2(0, span)])
@@ -471,10 +471,10 @@ func _challenge_effects() -> void:
 			var point = center+Vector2(cos(angle)*38,sin(angle)*12)
 			draw_line(point-Vector2(6,0),point+Vector2(6,0),Color("ffe9a4"),3)
 			draw_line(point-Vector2(0,6),point+Vector2(0,6),Color("ffe9a4"),3)
-	if view.phase_flash>0:
+	if view.phase_flash>0 and not view._reduced_flash():
 		var t: float = 1-view.phase_flash/.75
 		ellipse(boss,Vector2(70,35)*(1+t*4),Color(1,.82,.48,view.phase_flash*.65),4)
-	if brain.phase == "attack" and brain.move.kind == "volley" and not brain.move.has("signature") and fmod(brain.phase_clock,.34)<.12:
+	if brain.phase == "attack" and brain.move.kind == "volley" and not brain.move.has("signature") and fmod(brain.phase_clock,.34)<.12 and not view._reduced_flash():
 		var center = boss+Vector2(brain.facing.x*view.boss_height*.2,-view.boss_height*.45)
 		var color = _palette(brain.move.style)
 		for i in range(6):

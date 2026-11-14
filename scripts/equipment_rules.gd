@@ -1,6 +1,7 @@
 extends RefCounted
 ## Pure game rules. Initial health-derived scores are frozen separately from gear bonuses.
-const RULES_VERSION = "pixel-local-v1"
+const GROWTH = preload("res://data/equipment-growth.v2.json").data
+const RULES_VERSION = "equipment-growth-v2"
 const CATALOGUE_VERSION = "pixel-equipment-v1"
 const DAILY_QI = 100
 const SINGLE_COST = 70
@@ -23,7 +24,7 @@ const TEMPLATES = [
 static func fresh() -> Dictionary:
 	# Track the onboarding grant separately from the qi wallet so it cannot be
 	# recreated by changing the wallet balance or replaying the UI.
-	return {"qi": 0, "initial_score": -1.0, "initial_profile_id": "", "inventory": [], "equipped": {}, "next_id": 1, "draw_count": 0, "receipts": {}, "last_request": "", "starter_ten_pulls": 0}
+	return {"qi": 0, "materials": 0, "legendary_pity": 0, "wish_school": -1, "initial_score": -1.0, "initial_profile_id": "", "inventory": [], "equipped": {}, "next_id": 1, "draw_count": 0, "receipts": {}, "last_request": "", "starter_ten_pulls": 0}
 
 static func initial_score(attributes: Dictionary) -> float:
 	var total = 0.0
@@ -60,7 +61,15 @@ static func make_item(number: int, rarity: int, rng: RandomNumberGenerator) -> D
 static func detail(item: Dictionary) -> Dictionary:
 	var template = TEMPLATES[int(item.template)]
 	var rarity = int(item.rarity)
-	return {"id": str(item.id), "slot": template.slot, "stat": template.stat, "amount": template.values[rarity], "name": template.names[rarity], "rarity": rarity, "quality": RARITIES[rarity], "color": COLORS[rarity]}
+	var level := clampi(int(item.get("upgrade_level", 0)), 0, int(GROWTH.max_level))
+	var school := clampi(int(item.get("school", -1)), -1, GROWTH.schools.size() - 1)
+	var amount := int(float(template.values[rarity]) * (100 + level * float(GROWTH.upgrade_percent_per_level)) / 100) + level * int(GROWTH.upgrade_flat_per_level)
+	var item_name: String = template.names[rarity]
+	if school >= 0:
+		item_name = str(GROWTH.schools[school].name) + "·" + item_name
+	if level > 0:
+		item_name += " +%d" % level
+	return {"id": str(item.id), "slot": template.slot, "stat": template.stat, "amount": amount, "name": item_name, "rarity": rarity, "quality": RARITIES[rarity], "color": COLORS[rarity], "level": level, "school": school}
 
 static func bonus_text(item: Dictionary) -> String:
 	var info = detail(item)
@@ -68,17 +77,38 @@ static func bonus_text(item: Dictionary) -> String:
 
 static func bonuses(state: Dictionary) -> Dictionary:
 	var result = {"life": 0, "attack": 0, "defense": 0, "spirit": 0, "stamina": 0}
+	var schools := [0, 0, 0]
 	for item in state.inventory:
 		var info = detail(item)
 		if state.equipped.get(info.slot, "") == info.id:
 			result[info.stat] += info.amount
+			if info.school >= 0:
+				schools[info.school] += 1
+	for index in range(schools.size()):
+		var config: Dictionary = GROWTH.schools[index]
+		for bonus in [config.two if schools[index] >= 2 else {}, config.four if schools[index] >= 4 else {}]:
+			for stat in bonus:
+				result[stat] += int(bonus[stat])
 	return result
+
+static func upgrade_cost(level: int) -> Dictionary:
+	return {"materials": int(GROWTH.upgrade_materials_per_level) * (level + 1), "qi": int(GROWTH.upgrade_qi_per_level) * (level + 1)}
+
+static func salvage_yield(item: Dictionary) -> int:
+	var level := int(item.get("upgrade_level", 0))
+	return int(GROWTH.salvage_base[int(item.rarity)]) + int(float(GROWTH.upgrade_materials_per_level) * level * (level + 1) / 4)
 
 static func normalize(payload) -> Dictionary:
 	var result = fresh()
 	if not payload is Dictionary:
 		return result
 	result.qi = maxi(0, int(payload.get("qi", 0)))
+	result.materials = maxi(0, int(payload.get("materials", 0)))
+	result.legendary_pity = clampi(int(payload.get("legendary_pity", 0)), 0, int(GROWTH.legendary_hard) - 1)
+	result.wish_school = clampi(int(payload.get("wish_school", -1)), -1, GROWTH.schools.size() - 1)
+	var pending = payload.get("pending_draw")
+	if pending is Dictionary and valid_draw_count(pending.get("count")) and pending.get("request_id") is String:
+		result["pending_draw"] = {"count": int(pending.count), "request_id": str(pending.request_id)}
 	result.starter_ten_pulls = clampi(int(payload.get("starter_ten_pulls", 0)), 0, 1)
 	result.initial_score = clampf(float(payload.get("initial_score", -1.0)), -1.0, 100.0)
 	result.initial_profile_id = str(payload.get("initial_profile_id", ""))
@@ -93,7 +123,12 @@ static func normalize(payload) -> Dictionary:
 			var id = str(item.get("id", ""))
 			if template < 0 or template >= TEMPLATES.size() or rarity < 0 or rarity > 4 or not id.begins_with("gear_") or ids.has(id):
 				continue
-			result.inventory.append({"id": id, "template": template, "rarity": rarity})
+			var normalized_item := {"id": id, "template": template, "rarity": rarity}
+			if item.has("school"):
+				normalized_item["school"] = clampi(int(item.school), -1, GROWTH.schools.size() - 1)
+			if item.has("upgrade_level"):
+				normalized_item["upgrade_level"] = clampi(int(item.upgrade_level), 0, int(GROWTH.max_level))
+			result.inventory.append(normalized_item)
 			ids[id] = true
 			result.next_id = maxi(result.next_id, int(id.trim_prefix("gear_")) + 1)
 	var equipped = payload.get("equipped", {})

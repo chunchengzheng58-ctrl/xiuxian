@@ -114,7 +114,7 @@ func _build_gate(entry: Dictionary) -> void:
 	body.texture = Catalogue.boss_texture(entry.id)
 	body.position = Vector2(center, 550)
 	body.offset.y = -body.texture.get_height() * 0.5
-	body.scale = Vector2.ONE * 226 / body.texture.get_height()
+	body.scale = Vector2.ONE * float(entry.get("preview_height", 226)) / body.texture.get_height()
 	world.add_child(body)
 	var enter = Button.new()
 	enter.position = Vector2(center - 165, 263)

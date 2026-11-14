@@ -2,6 +2,7 @@
 setlocal
 REM 启动灵宠聊天服务（DeepSeek deepseek-flash），再把游戏指向它。
 set "GODOT=%GODOT4%"
+if not defined GODOT if exist "D:\Projects\Codex\tools\godot-4.7.2\Godot_v4.7.2-stable_win64.exe" set "GODOT=D:\Projects\Codex\tools\godot-4.7.2\Godot_v4.7.2-stable_win64.exe"
 if not defined GODOT if exist "F:\Godot_v4.7.2-stable_win64.exe" set "GODOT=F:\Godot_v4.7.2-stable_win64.exe"
 if not defined GODOT set "GODOT=D:\Projects\Codex\tools\godot-4.7.2\Godot_v4.7.2-stable_win64.exe"
 if not exist "%GODOT%" (

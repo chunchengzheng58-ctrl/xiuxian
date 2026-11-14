@@ -10,10 +10,12 @@ const Router = preload("res://scripts/kernel/command_router.gd")
 const Rules = preload("res://scripts/systems/combat/combat_rules.gd")
 const SESSION_KEYS: Array = ["cultivator_id", "encounter_id", "finished", "won", "duration_seconds"]
 const MAX_SESSIONS: int = 50
+const DUEL_WRITES = ["combat.duel_invite", "combat.duel_reply", "combat.expedition_start", "combat.matchmaking_join", "combat.matchmaking_cancel"]
 var _gate: Callable = Callable()
 var _provider: Callable = Callable()
 var _gateway: Callable = Callable()
 var _outcomes: Dictionary = {}
+var _duel_keys: Dictionary = {}
 
 func _init() -> void:
 	super("combat")
@@ -74,12 +76,29 @@ func set_gateway(gateway: Callable) -> void:
 	_gateway = gateway
 
 func execute(command: String, payload: Dictionary) -> Dictionary:
+	if command in DUEL_WRITES:
+		return await _duel_mutate(command, payload)
 	match command:
 		"combat.start":
 			return await _start(payload)
 		"combat.finish":
 			return await _finish(payload)
+		"combat.duel_lobby", "combat.duel_leave", "combat.expedition_lobby", "combat.expedition_leave", "combat.matchmaking_lobby":
+			return await request_backend(command, payload)
 	return Result.failure("NOT_IMPLEMENTED", "该命令尚未实现：" + command)
+
+func on_backend_changed() -> void:
+	_duel_keys.clear()
+
+func _duel_mutate(command: String, payload: Dictionary) -> Dictionary:
+	var signature := command + ":" + JSON.stringify(payload, "", true)
+	if not _duel_keys.has(signature):
+		_duel_keys[signature] = Crypto.new().generate_random_bytes(16).hex_encode()
+	var key: String = _duel_keys[signature]
+	var result := await request_backend(command, payload, key)
+	if _duel_keys.get(signature) == key and result.code not in ["NETWORK_ERROR", "INTERNAL_ERROR", "BACKEND_UNAVAILABLE", "INVALID_RESPONSE", "HTTP_ERROR"]:
+		_duel_keys.erase(signature)
+	return result
 
 func _start(payload: Dictionary) -> Dictionary:
 	var cultivator_id: String = payload.cultivator_id

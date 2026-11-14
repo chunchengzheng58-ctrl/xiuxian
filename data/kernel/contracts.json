@@ -10,11 +10,29 @@
       "growth.draw": {"cultivator_id": "string", "count": "integer", "request_id": "string"},
       "growth.create_member": {"role": "string", "name": "string", "profile": "object", "request_id": "string"},
       "growth.update_member": {"cultivator_id": "string", "name": "string", "profile": "object", "request_id": "string"},
-      "growth.unequip": {"cultivator_id": "string", "slot": "string", "request_id": "string"}
+      "growth.unequip": {"cultivator_id": "string", "slot": "string", "request_id": "string"},
+      "growth.market_list": {"cultivator_id": "string", "scope": "string", "slot": "string", "cursor": "integer"},
+      "growth.market_post": {"cultivator_id": "string", "equipment_id": "string", "price": "integer"},
+      "growth.market_cancel": {"cultivator_id": "string", "listing_id": "string"},
+      "growth.market_buy": {"cultivator_id": "string", "listing_id": "string"},
+      "growth.upgrade": {"cultivator_id": "string", "equipment_id": "string", "expected_level": "integer"},
+      "growth.attune": {"cultivator_id": "string", "equipment_id": "string", "school": "integer", "expected_school": "integer"},
+      "growth.salvage": {"cultivator_id": "string", "equipment_id": "string"},
+      "growth.set_wish": {"cultivator_id": "string", "school": "integer"}
     }},
     {"id": "combat", "commands": {
       "combat.start": {"cultivator_id": "string", "encounter_id": "string"},
-      "combat.finish": {"session_id": "string", "won": "bool", "duration_seconds": "number"}
+      "combat.finish": {"session_id": "string", "won": "bool", "duration_seconds": "number"},
+      "combat.duel_lobby": {"cultivator_id": "string"},
+      "combat.duel_invite": {"cultivator_id": "string", "relation_id": "string"},
+      "combat.duel_reply": {"cultivator_id": "string", "match_id": "string", "action": "string"},
+      "combat.duel_leave": {"cultivator_id": "string", "match_id": "string"},
+      "combat.matchmaking_lobby": {"cultivator_id": "string"},
+      "combat.matchmaking_join": {"cultivator_id": "string"},
+      "combat.matchmaking_cancel": {"cultivator_id": "string"},
+      "combat.expedition_lobby": {"cultivator_id": "string"},
+      "combat.expedition_start": {"cultivator_id": "string", "stage_id": "string"},
+      "combat.expedition_leave": {"cultivator_id": "string", "run_id": "string"}
     }},
     {"id": "quests", "commands": {
       "quests.list": {"cultivator_id": "string"},
@@ -29,12 +47,21 @@
       "lifecycle.update_stage": {"cultivator_id": "string", "stage_id": "string", "confirmation_token": "string"}
     }},
     {"id": "story", "commands": {
+      "story.snapshot": {"cultivator_id": "string"},
       "story.advance": {"cultivator_id": "string", "node_id": "string"}
     }},
     {"id": "social", "commands": {
       "social.visit": {"cultivator_id": "string"},
       "social.bless": {"cultivator_id": "string", "request_id": "string"},
-      "social.set_visibility": {"cultivator_id": "string", "scope": "string"}
+      "social.set_visibility": {"cultivator_id": "string", "scope": "string"},
+      "social.home": {"cultivator_id": "string"},
+      "social.profile": {"cultivator_id": "string", "alias": "string", "rotate_code": "bool"},
+      "social.invite": {"cultivator_id": "string", "invite_code": "string"},
+      "social.respond": {"cultivator_id": "string", "relation_id": "string", "action": "string"},
+      "social.unblock": {"cultivator_id": "string", "peer_id": "string"},
+      "social.chat": {"cultivator_id": "string", "relation_id": "string", "before": "integer"},
+      "social.send": {"cultivator_id": "string", "relation_id": "string", "body": "string"},
+      "social.read": {"cultivator_id": "string", "relation_id": "string", "through": "integer"}
     }},
     {"id": "season", "commands": {
       "season.refresh": {"cultivator_id": "string"}

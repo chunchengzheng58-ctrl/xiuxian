@@ -2,13 +2,13 @@
 
 依据：[项目设计文档 v2](../家族修真录-设计文档-v2.md)，重点为第 3、14、19、20 节。
 
-基础交付是可运行的客户端内核与系统扩展骨架。时间、事件、随机、配置、状态存储、版本迁移、命令路由和审计已经实现。C 后续接入了本地服务端、可选网络依赖和 `season.refresh`；其余六个客户端业务系统仍是骨架，占位命令返回 `NOT_IMPLEMENTED`。未配置后端时赛季查询返回 `BACKEND_UNAVAILABLE`。
+本文保留最初内核骨架交付的结构说明。后续已接入账号、家族、养成、任务、正式主线、二十秘境、社交、交易及实时论剑，当前业务接入以 [整合说明](BCD_INTEGRATION.md)、[后端说明](../server/README.md) 和 `data/kernel/contracts.json` 为准。`story.snapshot/advance` 已接服务端章节与一次性奖励；未实现的个别命令仍明确返回 `NOT_IMPLEMENTED`，未配置后端时网络业务返回 `BACKEND_UNAVAILABLE`。
 
-现有像素仙村仍可运行。新系统通过 `GameKernel` 接入，旧 `game_state.gd` 和 `pixel_campaign/state.gd` 尚未迁移。不要把旧玩法里的本地发奖或渡劫战斗当成 v2 的规则。
+现有像素仙村通过 `GameKernel` 接入正式业务；`game_state.gd` 对正式账号作为服务端数据的本机读模型，游客与旧剧情仍保留独立本地演示。不要把演示模式的本地发奖当成正式账本结果。
 
 ## 1. 运行入口
 
-实际项目根目录是 `.deploy/repo/`，请用 Godot 4.7.2 打开这里的 `project.godot`。
+请用 Godot 4.7.2 打开当前项目根目录的 `project.godot`。本机当前路径和启动方法见 [README](../README.md)，旧文档的 `.deploy/repo/` 不是固定运行位置。
 
 - F5：现有游戏；`GameKernel` 自动装配新内核。
 - 打开 `scenes/kernel/workbench.tscn` 按 F6：查看七个系统状态，点击按钮验证命令调用。

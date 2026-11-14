@@ -62,11 +62,11 @@ if logged_in.ok:
         {"name": "清荷真人", "element": "water"}, stable_creation_key)
 ```
 
-上例供网络装配/账号控制器使用。常规界面仍通过 `GameKernel.dispatch()` 调用 B 的模块；模块内部使用 `request_backend(command,payload,key)`。本轮没有替 B 实现 growth/quests 客户端业务，直接 dispatch 这些占位命令仍返回 NOT_IMPLEMENTED。
+上例供网络装配/账号控制器使用。常规界面通过 `GameKernel.dispatch()` 调用各模块，模块内部使用 `request_backend(command,payload,key)`。后续已实现 growth/quests 等客户端业务，正式家族界面使用 `growth.create_member` 和 `growth.update_member`；以当前共享契约及模块 `execute()` 为准，不要把旧交付时的占位状态当成当前能力。
 
 成功响应后只写本模块 Store，再发事实事件。网络超时保留原幂等键；相同键不同内容返回 IDEMPOTENCY_CONFLICT。正文 request_id 与请求头同时存在时必须一致。
 
-各模块实现 `on_backend_changed()` 清理账号相关投影。请求期间账号或地址变化返回 SESSION_CHANGED，旧响应不能写回 Store。C 的 season 已实现清理及 v1→v2 迁移。
+各模块实现 `on_backend_changed()` 清理账号相关投影。请求期间账号或地址变化返回 SESSION_CHANGED，旧响应不能写回 Store。growth、social 等网络模块及 season 均处理账号切换；升级时仍需验证各自状态迁移。
 
 绑定入口：`POST /api/v2/bindings/invitations` 传 cultivator_id；`GET /api/v2/bindings?cultivator_id=...` 查询；`POST /api/v2/bindings/:id/revoke` 撤回资料授权；`DELETE /api/v2/bindings/:id` 解绑。分别展示连接、绑定和资料授权。撤回后需先解绑，再通过新邀请确认，不能用连接恢复代替授权。
 

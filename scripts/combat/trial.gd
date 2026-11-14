@@ -27,8 +27,12 @@ func _ready() -> void:
 	_boss_art = load(encounter.boss_sheet)
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_audio = AudioStreamPlayer.new()
+	_audio.bus = "Effects"
 	_audio.volume_db = -14
 	add_child(_audio)
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null:
+		audio.enter_battle(self)
 	message = simulation.message
 	for item in [["普攻 J", 0], ["灵根技能 Q", 1], ["法宝 R", 2]]:
 		var button := Button.new()
@@ -51,6 +55,8 @@ func _ready() -> void:
 	add_child(_exit_button)
 
 func _process(delta: float) -> void:
+	if _settings_open():
+		return
 	if ended or fight == null:
 		queue_redraw()
 		return
@@ -84,14 +90,14 @@ func skill(ultimate: bool = false) -> void:
 	_strike(2 if ultimate else 1)
 
 func _strike(mode: int) -> void:
-	if simulation == null or ended or paused:
+	if simulation == null or ended or paused or _settings_open():
 		return
 	var aim: Vector2 = get_local_mouse_position()
 	if not Rect2(60, 170, 1320, 590).has_point(aim):
 		aim = simulation.player_pos
 	var result: Dictionary = simulation.attack(aim, mode, weapon)
 	if result.get("ok", false):
-		_attack_flash = 0.24
+		_attack_flash = 0.0 if _reduced_flash() else 0.24
 		_audio.stream = load("res://assets/combat/strike.wav" if mode == 0 else "res://assets/combat/spell.wav")
 		_audio.play()
 	message = simulation.message
@@ -104,6 +110,27 @@ func request_leave() -> void:
 	if simulation != null:
 		simulation.finished = true
 	await super.request_leave()
+
+func _settings_open() -> bool:
+	if not is_inside_tree():
+		return false
+	var options := get_node_or_null("/root/GameOptions")
+	return options != null and options.settings_open
+
+func _reduced_flash() -> bool:
+	if not is_inside_tree():
+		return false
+	var options := get_node_or_null("/root/GameOptions")
+	return options != null and options.get_value("reduced_flash", false)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _settings_open():
+		super._unhandled_input(event)
+
+func _exit_tree() -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null:
+		audio.leave_battle(self)
 
 func _sprite(texture: Texture2D, cell: int, columns: int, rows: int, position: Vector2, height: float) -> void:
 	var tile := Vector2(texture.get_width() / float(columns), texture.get_height() / float(rows))

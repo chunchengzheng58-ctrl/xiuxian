@@ -397,6 +397,7 @@ func celebrate() -> void:
 		status = "家属确认完成，归来有灯！"
 		if DisplayServer.get_name() != "headless":
 			var chime := AudioStreamPlayer.new()
+			chime.bus = "Effects"
 			chime.stream = preload("res://assets/combat/chime.wav")
 			chime.volume_db = -16
 			add_child(chime)

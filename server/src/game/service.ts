@@ -1,6 +1,13 @@
 import { Database } from '../database.js';
 import { type Clock, dayKey, dayStart, id, requireCondition } from '../core.js';
 import { Ledger, idempotent } from './ledger.js';
+import { MarketService } from './market.js';
+import { SocialService } from './social.js';
+import { ArenaService } from './arena.js';
+import { ExpeditionService } from './expedition.js';
+import { CharacterProgression } from './character-progression.js';
+import { StoryService } from './story.js';
+import { EquipmentGrowth, growthConfig, equipmentBonuses, type GrowingEquipment } from './equipment-growth.js';
 import { ProgressService } from './progress.js';
 import { type Character, type RuleProviders, type Template, allSlots, checkedRules, compensationTier, elements, initialScore, isPixel, legacyRules, pixelRarities, pixelRules, pixelSlots, profileElement, rollPixelRarity, rollRarity, slots } from './rules.js';
 
@@ -51,8 +58,22 @@ const defaultCalendar: Season[] = [
 export class GameService {
   readonly ledger: Ledger;
   readonly progress: ProgressService;
+  readonly market: MarketService;
+  readonly social: SocialService;
+  readonly arena: ArenaService;
+  readonly equipmentGrowth: EquipmentGrowth;
+  readonly expedition: ExpeditionService;
+  readonly adventure: CharacterProgression;
+  readonly story: StoryService;
   constructor(readonly db: Database, readonly now: Clock, readonly rules: RuleProviders, private randomInt: (maximum: number) => number, readonly calendar = defaultCalendar, private extensions: GameExtensions = {}) {
     this.ledger = new Ledger(db, now);
+    this.market = new MarketService(db, now, this.ledger);
+    this.social = new SocialService(db, now);
+    this.arena = new ArenaService(db, now, this.social);
+    this.equipmentGrowth = new EquipmentGrowth(db, this.ledger, now);
+    this.adventure = new CharacterProgression(db, now);
+    this.story = new StoryService(db, now, this.ledger, this.adventure);
+    this.expedition = new ExpeditionService(db, now, this.ledger, randomInt, this.adventure);
     this.progress = new ProgressService(db, now, (accountId, cultivarId) => this.own(accountId, cultivarId));
     checkedRules(rules, rules.currentVersion);
     const sorted = [...calendar].sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
@@ -82,6 +103,7 @@ export class GameService {
   characterSnapshot(accountId: string, cultivarId: string) {
     const character = this.own(accountId, cultivarId);
     const baseline = this.db.get<{ baseline_id: string; projection: string; created_at: number }>('SELECT baseline_id, projection, created_at FROM baselines WHERE cultivator_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1', character.id);
+    const gear = this.db.all<GrowingEquipment>('SELECT * FROM equipment WHERE cultivator_id = ? AND salvaged_at IS NULL', character.id);
     return {
       cultivator_id: character.id, name: character.name, element: character.element, lifecycle: character.lifecycle, realm: character.realm,
       role: character.role, profile: JSON.parse(character.profile) as MemberProfile | Record<string, never>,
@@ -89,18 +111,29 @@ export class GameService {
       // 累计有效日：日奖励组每成立一天加一，漏记不清零。
       days: this.db.get<{ days: number }>('SELECT COUNT(*) AS days FROM reward_groups WHERE cultivator_id = ?', character.id)!.days,
       pity: character.pity, compensation_tier: compensationTier(this.rules, character), draw_count: character.draw_count,
+      legendary_pity: character.legendary_pity, wish_school: character.wish_school,
+      equipment_growth_version: growthConfig.version, equipment_bonuses: equipmentBonuses(gear),
+      adventure: character.role === 'self' ? this.adventure.view(character) : null,
       initial_score: character.initial_score, initial_profile_id: character.initial_profile_id,
       // A：生命周期投影与首通；战斗胜负不产生资源，也不改变生命周期。
       progress: this.progress.view(character),
       baseline: baseline ? { baseline_id: baseline.baseline_id, confirmed_at: baseline.created_at, ...JSON.parse(baseline.projection) } : null,
-      equipment: this.db.all('SELECT id AS equipment_id, catalogue_id, catalogue_version, slot, rarity, equipped FROM equipment WHERE cultivator_id = ? ORDER BY created_at, rowid', character.id),
+      equipment: this.db.all(`SELECT e.id AS equipment_id, e.catalogue_id, e.catalogue_version, e.slot, e.rarity, e.equipped, e.school, e.upgrade_level,
+        COALESCE(m.id, '') AS market_listing_id FROM equipment e
+        LEFT JOIN market_listings m ON m.equipment_id = e.id AND m.status = 'active'
+        WHERE e.cultivator_id = ? AND e.salvaged_at IS NULL ORDER BY e.created_at, e.rowid`, character.id),
     };
   }
 
   snapshot(accountId: string) {
     const account = this.db.get<{ revision: number; merit: number }>('SELECT revision, merit FROM accounts WHERE id = ?', accountId)!;
-    const characters = this.db.all<{ id: string }>('SELECT id FROM cultivators WHERE account_id = ? ORDER BY created_at, rowid', accountId);
-    return { revision: account.revision, merit: account.merit, cultivators: characters.map(character => this.characterSnapshot(accountId, character.id)), season: this.season() };
+    const characters = this.db.all<{ id: string; role: string }>('SELECT id, role FROM cultivators WHERE account_id = ? ORDER BY created_at, rowid', accountId);
+    const self = characters.find(character => character.role === 'self')?.id;
+    return {
+      revision: account.revision, merit: account.merit, season: this.season(),
+      cultivators: characters.map(character => this.characterSnapshot(accountId, character.id)),
+      social: this.social.summary(self), duel: this.arena.summary(self),
+    };
   }
 
   templates() {
@@ -138,8 +171,11 @@ export class GameService {
       case 'growth.equip': return mutate(() => {
         this.own(accountId, text('cultivator_id'));
         requireCondition(allSlots.includes(text('slot')), 'INVALID_SLOT', '装备部位无效');
-        const equipment = this.db.get<{ slot: string }>('SELECT slot FROM equipment WHERE id = ? AND cultivator_id = ?', text('equipment_id'), text('cultivator_id'));
+        const equipment = this.db.get<{ slot: string; listed: number }>(`SELECT slot,
+          EXISTS(SELECT 1 FROM market_listings WHERE equipment_id = equipment.id AND status = 'active') AS listed
+          FROM equipment WHERE id = ? AND cultivator_id = ? AND salvaged_at IS NULL`, text('equipment_id'), text('cultivator_id'));
         requireCondition(equipment?.slot === text('slot'), 'INVALID_EQUIPMENT', '装备归属或部位不匹配', 409);
+        requireCondition(!equipment.listed, 'EQUIPMENT_LISTED', '请先在万宝集撤下这件装备', 409);
         this.db.run('UPDATE equipment SET equipped = 0 WHERE cultivator_id = ? AND slot = ?', text('cultivator_id'), text('slot'));
         this.db.run('UPDATE equipment SET equipped = 1 WHERE id = ?', text('equipment_id'));
         this.db.touch(accountId);
@@ -156,6 +192,81 @@ export class GameService {
         const character = this.own(accountId, text('cultivator_id'));
         return isMember(character) ? this.pixelDraw(accountId, character, payload.count as number, text('request_id')) : this.draw(accountId, text('cultivator_id'), payload.count as number);
       });
+      case 'growth.market_list':
+        return this.market.list(this.own(accountId, text('cultivator_id')), text('scope'), text('slot'), payload.cursor as number);
+      case 'growth.market_post':
+        return mutate(() => this.market.post(this.own(accountId, text('cultivator_id')), text('equipment_id'), payload.price as number));
+      case 'growth.market_cancel':
+        return mutate(() => this.market.cancel(this.own(accountId, text('cultivator_id')), text('listing_id')));
+      case 'growth.market_buy':
+        return mutate(() => this.market.buy(this.own(accountId, text('cultivator_id')), text('listing_id')));
+      case 'growth.set_wish': return mutate(() => {
+        const character = this.own(accountId, text('cultivator_id'));
+        const school = payload.school as number;
+        requireCondition(Number.isSafeInteger(school) && school >= -1 && school < growthConfig.schools.length, 'INVALID_SCHOOL', '祈愿流派无效');
+        this.db.run('UPDATE cultivators SET wish_school = ? WHERE id = ?', school, character.id);
+        this.db.touch(accountId);
+        return this.characterSnapshot(accountId, character.id);
+      });
+      case 'growth.upgrade': return mutate(() => {
+        const character = this.own(accountId, text('cultivator_id'));
+        this.equipmentGrowth.upgrade(character, text('equipment_id'), payload.expected_level as number);
+        return this.characterSnapshot(accountId, character.id);
+      });
+      case 'growth.attune': return mutate(() => {
+        const character = this.own(accountId, text('cultivator_id'));
+        this.equipmentGrowth.attune(character, text('equipment_id'), payload.school as number, payload.expected_school as number);
+        return this.characterSnapshot(accountId, character.id);
+      });
+      case 'growth.salvage': return mutate(() => {
+        const character = this.own(accountId, text('cultivator_id'));
+        this.equipmentGrowth.salvage(character, text('equipment_id'));
+        return this.characterSnapshot(accountId, character.id);
+      });
+      case 'social.home':
+        return this.social.home(this.own(accountId, text('cultivator_id')));
+      case 'social.profile':
+        return mutate(() => this.social.saveProfile(this.own(accountId, text('cultivator_id')), text('alias'), payload.rotate_code === true));
+      case 'social.invite':
+        return mutate(() => this.social.invite(this.own(accountId, text('cultivator_id')), text('invite_code')));
+      case 'social.respond':
+        return mutate(() => this.social.respond(this.own(accountId, text('cultivator_id')), text('relation_id'), text('action')));
+      case 'social.unblock':
+        return mutate(() => this.social.unblock(this.own(accountId, text('cultivator_id')), text('peer_id')));
+      case 'social.chat':
+        return this.social.chat(this.own(accountId, text('cultivator_id')), text('relation_id'), payload.before as number);
+      case 'social.send':
+        return mutate(() => this.social.send(this.own(accountId, text('cultivator_id')), text('relation_id'), text('body')));
+      case 'social.read':
+        return this.db.transaction(() => this.social.read(this.own(accountId, text('cultivator_id')), text('relation_id'), payload.through as number));
+      case 'combat.duel_lobby':
+        return this.arena.lobby(this.own(accountId, text('cultivator_id')));
+      case 'combat.duel_invite':
+        return mutate(() => this.arena.invite(this.own(accountId, text('cultivator_id')), text('relation_id')));
+      case 'combat.duel_reply':
+        return mutate(() => this.arena.reply(this.own(accountId, text('cultivator_id')), text('match_id'), text('action')));
+      case 'combat.duel_leave':
+        return this.arena.leave(this.own(accountId, text('cultivator_id')), text('match_id'));
+      case 'combat.matchmaking_lobby':
+        return this.arena.matchmakingLobby(this.own(accountId, text('cultivator_id')));
+      case 'combat.matchmaking_join':
+        return mutate(() => this.arena.matchmakingJoin(this.own(accountId, text('cultivator_id'))));
+      case 'combat.matchmaking_cancel':
+        return mutate(() => this.arena.matchmakingCancel(this.own(accountId, text('cultivator_id'))));
+      case 'combat.expedition_lobby':
+        return this.expedition.lobby(this.own(accountId, text('cultivator_id')));
+      case 'story.snapshot':
+        return this.story.snapshot(this.own(accountId, text('cultivator_id')));
+      case 'story.advance':
+        return mutate(() => this.story.advance(this.own(accountId, text('cultivator_id')), text('node_id')));
+      case 'combat.expedition_start':
+        return mutate(() => {
+          const actor = this.own(accountId, text('cultivator_id'));
+          this.arena.assertNotQueued(actor.id);
+          return this.expedition.start(actor, text('stage_id'));
+        });
+      case 'combat.expedition_leave':
+        return this.expedition.leave(this.own(accountId, text('cultivator_id')), text('run_id'));
       case 'quests.family_today': return this.familyTasks(accountId, text('date'));
       // 扩展处理器优先，便于联调替换；默认由 A 的规则在 C 的事务内执行。
       case 'lifecycle.request_change': if (this.extensions.commands?.[command]) break; return this.db.transaction(() => this.progress.requestChange(accountId, text('cultivator_id'), text('target_state')));
@@ -311,24 +422,34 @@ export class GameService {
       requireCondition(Number.isInteger(value) && value >= 0 && value < maximum, 'INVALID_RANDOM', '随机提供方越界', 500);
       return value;
     };
+    let pity = character.legendary_pity;
+    let legendaryGuaranteed = false;
     const rolled = Array.from({ length: count }, () => {
-      const rarity = rollPixelRarity(rules, character.initial_score!, this.randomInt(1_000_000));
+      let rarity = rollPixelRarity(rules, character.initial_score!, this.randomInt(1_000_000));
+      if (rarity < 3 && pity + 1 >= growthConfig.legendary_hard) {
+        rarity = 3;
+        legendaryGuaranteed = true;
+      } else if (rarity < 3 && pity >= growthConfig.legendary_soft_start &&
+        pick(1_000_000) < Math.min(1, (pity - growthConfig.legendary_soft_start + 1) * growthConfig.legendary_soft_step) * 1_000_000) {
+        rarity = 3;
+      }
+      pity = rarity >= 3 ? 0 : pity + 1;
       const slot = pixelSlots[pick(pixelSlots.length)]!;
       const candidates = rules.templates.flatMap((template, index) => template.slot === slot ? [index] : []);
-      return { rarity, template: candidates[pick(candidates.length)]! };
+      return { rarity, template: candidates[pick(candidates.length)]!, school: character.wish_school >= 0 ? character.wish_school : pick(growthConfig.schools.length) };
     });
     const guaranteed = count === 10 && rolled.every(item => item.rarity < rules.ten_guarantee_index);
     // 只升级末件；自然抽到的传说/神话不会被降级。
     if (guaranteed) rolled[rolled.length - 1]!.rarity = rules.ten_guarantee_index;
-    const items = rolled.map(({ rarity, template }) => {
+    const items = rolled.map(({ rarity, template, school }) => {
       const equipmentId = id('equipment');
       const info = rules.templates[template]!;
-      this.db.run('INSERT INTO equipment (id, cultivator_id, catalogue_id, slot, rarity, catalogue_version, draw_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', equipmentId, character.id, `pixel:${template}`, info.slot, pixelRarities[rarity]!, rules.catalogue_version, operationId, this.now());
-      return { equipment_id: equipmentId, catalogue_id: `pixel:${template}`, template, slot: info.slot, rarity: pixelRarities[rarity]!, rarity_index: rarity, name: info.names[rarity]!, stat: info.stat, amount: info.values[rarity]! };
+      this.db.run('INSERT INTO equipment (id, cultivator_id, catalogue_id, slot, rarity, catalogue_version, draw_id, created_at, school) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', equipmentId, character.id, `pixel:${template}`, info.slot, pixelRarities[rarity]!, rules.catalogue_version, operationId, this.now(), school);
+      return { equipment_id: equipmentId, catalogue_id: `pixel:${template}`, template, slot: info.slot, rarity: pixelRarities[rarity]!, rarity_index: rarity, name: info.names[rarity]!, stat: info.stat, amount: info.values[rarity]!, school, upgrade_level: 0 };
     });
-    this.db.run('UPDATE cultivators SET draw_count = draw_count + ? WHERE id = ?', count, character.id);
+    this.db.run('UPDATE cultivators SET draw_count = draw_count + ?, legendary_pity = ? WHERE id = ?', count, pity, character.id);
     this.db.touch(accountId);
-    return { draw_id: operationId, request_id: requestId, rule_version: rules.version, catalogue_version: rules.catalogue_version, count, cost, guaranteed, items, character: this.characterSnapshot(accountId, character.id) };
+    return { draw_id: operationId, request_id: requestId, rule_version: growthConfig.version, catalogue_version: rules.catalogue_version, count, cost, guaranteed, legendary_guaranteed: legendaryGuaranteed, items, character: this.characterSnapshot(accountId, character.id) };
   }
 
   // D 以服务身份提交的可信初始属性投影。首份确认冻结抽卡支持值；之后的补充报告只更新属性。

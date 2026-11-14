@@ -8,6 +8,7 @@ var tint = Color("ffd36b")
 var rarity = 0
 var template = 0
 var clock = 0.0
+var school: int = -1
 
 func setup(item: Dictionary) -> void:
 	var info = Rules.detail(item)
@@ -15,6 +16,7 @@ func setup(item: Dictionary) -> void:
 	tint = info.color
 	rarity = info.rarity
 	template = int(item.template)
+	school = int(info.school)
 	set_process(rarity >= 2)
 	queue_redraw()
 
@@ -62,6 +64,20 @@ func _draw() -> void:
 		"robe": draw_robe()
 		"boots": draw_boots()
 		"amulet": draw_amulet()
+	if school >= 0:
+		var color := Color(str(Rules.GROWTH.schools[school].color))
+		draw_circle(Vector2(30, -30), 9, INK)
+		draw_circle(Vector2(30, -30), 7, color)
+		match school:
+			0:
+				draw_line(Vector2(30, -35), Vector2(30, -25), Color.WHITE, 1.8)
+				draw_line(Vector2(26, -32), Vector2(34, -28), Color.WHITE, 1.5)
+			1:
+				draw_line(Vector2(26, -26), Vector2(34, -34), Color.WHITE, 2.0)
+				draw_line(Vector2(28, -33), Vector2(33, -28), Color.WHITE, 1.5)
+			2:
+				draw_arc(Vector2(28, -31), 4, 0, PI, 12, Color.WHITE, 1.5)
+				draw_arc(Vector2(32, -28), 4, PI, TAU, 12, Color.WHITE, 1.5)
 
 func draw_sword() -> void:
 	var blade_colors = [Color("b6d5ac"), Color("b7e1ed"), Color("d8c9ff"), Color("fff0b8"), Color("ffe3ed")]
