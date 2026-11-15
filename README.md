@@ -67,6 +67,10 @@ Windows 版首次启动可注册本地试玩账号。账号和进度随包保存
 - **五域归衡主线扩展**从苍梧林的木域线索开始，经历五域并收集归衡印，包含二十个正式秘境、九章剧情和最高 30 级的冒险成长。已发布独立 [Windows 主线试玩包](https://github.com/chunchengzheng58-ctrl/xiuxian/releases/tag/five-realms-preview-20261107)。
 - **GitHub Pages** 提供较早的浏览器演示。各试玩包使用各自的默认数据目录，换包后可用新账号体验；需要迁移进度时先参照存档说明备份。
 
+## PTDS 穿戴数据
+
+桌面源码版可预览从 Mac 上的 PTDS 导出的 Oura 单日步数和睡眠时长。游戏内入口为「每日修行 → PTDS 穿戴摘要」。安装、授权流程与导出命令见 [PTDS 接入指南](docs/PTDS.md)。
+
 ## 源码与开发
 
 `main` 保留基础 Godot 工程。要查看带游戏服务端、PVP 及主线扩展的开发源码，请切换到 [`codex/five-realms-preview`](https://github.com/chunchengzheng58-ctrl/xiuxian/tree/codex/five-realms-preview)。该分支也包含「五域归衡」主线扩展。要体验上方发布的 PVP 与 Boss 试玩版，请使用 Release 附件，构建信息记录在附件的 `manifest.json` 中。

@@ -2,6 +2,7 @@ extends "res://scripts/pixel_interface.gd"
 
 const Assets = preload("res://scripts/pixel_assets.gd")
 const Combat = preload("res://scripts/combat_view.gd")
+const PtdsSummary = preload("res://scripts/ptds_summary.gd")
 var start_screen: ColorRect
 var selected_avatar: String = "male"
 var avatar_buttons: Array[Button] = []
@@ -205,6 +206,25 @@ func open_record() -> void:
 	button(actions, "阶段恢复篇章", open_recovery)
 	button(actions, "查看家族修行簿", open_records)
 	paragraph(content, "这里不识别真实服药，不给出药名或剂量；计划由家人按既有安排设置。", 13)
+	if not OS.has_feature("web"):
+		button(actions, "PTDS 穿戴摘要", open_ptds_summary)
+
+
+func open_ptds_summary() -> void:
+	var content = _dialog("PTDS 穿戴摘要", "选择本人从 PTDS 导出的 Oura 单日摘要。")
+	paragraph(content, "数值仅在面板中预览，与任务奖励和家人档案分开。", 16)
+	var result := label_into(content, "尚未选择摘要。", 22)
+	result.name = "PtdsSummaryResult"
+	var picker := FileDialog.new()
+	picker.name = "PtdsSummaryPicker"
+	picker.access = FileDialog.ACCESS_FILESYSTEM
+	picker.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	picker.add_filter("*.json", "PTDS 摘要")
+	picker.title = "选择 PTDS 摘要"
+	content.add_child(picker)
+	picker.file_selected.connect(func(path: String): result.text = PtdsSummary.read_file(path))
+	button(content, "选择摘要 JSON", func(): picker.popup_centered(Vector2i(720, 480)))
+	button(content, "返回每日修行", open_record)
 
 func confirm_task(task: String, consent: bool) -> void:
 	var result = game.state.record_task(task, consent)
