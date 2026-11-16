@@ -4,38 +4,38 @@ const MAX_BYTES = 4096
 const SCHEMA = "xiuxian.ptds-oura.v1"
 
 
-static func read_file(path: String) -> String:
+static func read_file(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return "无法打开摘要文件。"
+		return {"message": "无法打开摘要文件。"}
 	if file.get_length() > MAX_BYTES:
-		return "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。"
+		return {"message": "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。"}
 	return preview(file.get_buffer(MAX_BYTES + 1).get_string_from_utf8())
 
 
-static func preview(json: String) -> String:
+static func preview(json: String) -> Dictionary:
 	if json.to_utf8_buffer().size() > MAX_BYTES:
-		return "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。"
+		return {"message": "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。"}
 	var data: Variant = JSON.parse_string(json)
 	if not data is Dictionary or data.get("schema") != SCHEMA:
-		return "摘要格式不受支持，请使用项目提供的 PTDS 导出工具。"
+		return {"message": "摘要格式不受支持，请使用项目提供的 PTDS 导出工具。"}
 	var day: Variant = data.get("date")
 	if not valid_date(day):
-		return "摘要日期无效。"
+		return {"message": "摘要日期无效。"}
 	var lines := PackedStringArray()
 	if data.has("steps"):
 		var steps: Variant = data["steps"]
 		if not valid_count(steps, 1000000):
-			return "摘要中的步数无效。"
+			return {"message": "摘要中的步数无效。"}
 		lines.append("步数：%d 步" % int(steps))
 	if data.has("sleep_minutes"):
 		var minutes: Variant = data["sleep_minutes"]
 		if not valid_count(minutes, 1440):
-			return "摘要中的睡眠时长无效。"
+			return {"message": "摘要中的睡眠时长无效。"}
 		lines.append("睡眠时长：%d 分钟" % int(minutes))
 	if lines.is_empty():
-		return "摘要中没有可预览的穿戴记录。"
-	return "Oura · %s\n\n%s" % [day, "\n".join(lines)]
+		return {"message": "摘要中没有可预览的穿戴记录。"}
+	return {"date": day, "message": "Oura · %s\n\n%s" % [day, "\n".join(lines)]}
 
 
 static func valid_count(value: Variant, maximum: int) -> bool:

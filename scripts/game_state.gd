@@ -47,19 +47,36 @@ func record_task(task: String, consent: bool) -> Dictionary:
 		return {"ok": false, "rewarded": false, "message": "未知计划任务。"}
 	if task == "medication" and (not longterm_enabled or not medication_required):
 		return {"ok": false, "rewarded": false, "message": "当前未启用个人用药计划，无需记录服药。"}
-	if task_done(task):
+	return _record_daily_task(task, today(), "family_confirmation")
+
+func record_ptds_summary(observed_day: String) -> Dictionary:
+	var day := today()
+	if observed_day != day:
+		return {"ok": false, "rewarded": false, "message": "请选择游戏本地日期为今天的 PTDS 摘要。"}
+	return _record_daily_task("ptds_summary", day, "ptds_self_confirmation")
+
+func _record_daily_task(task: String, day: String, source: String) -> Dictionary:
+	if task_done(task, day):
 		return {"ok": false, "rewarded": false, "message": "今天这项计划已经确认，无需重复记录。"}
-	var day = today()
+	var rewarded = day not in rewarded_days
+	var message = "今日记录已保存。主行为奖励已领取，修行积累不会重复计数。"
+	if rewarded:
+		var result = confirm_event({
+			"event_id": "plan_" + day + "_" + task,
+			"plan_id": "daily_plan",
+			"observed_day": day,
+			"review_status": "confirmed",
+			"consent_scope": "family_game",
+			"source": source,
+		})
+		if not result.ok:
+			return {"ok": false, "rewarded": false, "message": result.message}
+		message = result.message
 	if not daily_tasks.has(day):
 		daily_tasks[day] = {}
 	daily_tasks[day][task] = true
-	var rewarded = false
-	var message = "今日记录已保存。主行为奖励已领取，修行积累不会重复计数。"
-	if day not in rewarded_days:
-		var result = confirm_event({"event_id": "plan_" + day + "_" + task, "plan_id": "daily_plan", "observed_day": day, "review_status": "confirmed", "consent_scope": "family_game", "source": "family_confirmation"})
-		rewarded = result.ok
-		message = result.message
 	return {"ok": true, "rewarded": rewarded, "message": message}
+
 
 func begin_recovery(confirmed: bool) -> bool:
 	if not confirmed:
@@ -102,13 +119,14 @@ func confirm_event(event: Dictionary) -> Dictionary:
 		return {"ok": false, "message": "这条记录尚未获得家族游戏使用授权。"}
 	if event["event_id"] in confirmed_events:
 		return {"ok": false, "message": "这条记录已经领取过奖励。"}
-	if event.get("observed_day", "") != today():
+	var day := today()
+	if event.get("observed_day", "") != day:
 		return {"ok": false, "message": "快速演示只结算今日的计划记录。"}
-	if today() in rewarded_days:
+	if day in rewarded_days:
 		return {"ok": false, "message": "今日主行为奖励已领取。无需重复记录，仍可继续探索和试炼。"}
 	confirmed_events.append(event["event_id"])
-	rewarded_days.append(today())
-	last_reward_day = today()
+	rewarded_days.append(day)
+	last_reward_day = day
 	cultivation += 10
 	qi += 4
 	charms += 1

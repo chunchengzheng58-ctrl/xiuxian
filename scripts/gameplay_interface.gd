@@ -198,7 +198,7 @@ func open_record() -> void:
 		medication.disabled = not checked or not medication_due or state.task_done("medication")
 		record.disabled = not checked or state.task_done("planned_record")
 	)
-	paragraph(content, "每项任务每天只记录一次；两项共用每日一份主行为奖励。漏记不扣历史修为。", 15)
+	paragraph(content, "每项任务每天可确认一次，共用每日一份主行为奖励。漏记不扣历史修为。", 15)
 	var actions = HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
 	content.add_child(actions)
@@ -207,12 +207,13 @@ func open_record() -> void:
 	button(actions, "查看家族修行簿", open_records)
 	paragraph(content, "这里不识别真实服药，不给出药名或剂量；计划由家人按既有安排设置。", 13)
 	if not OS.has_feature("web"):
-		button(actions, "PTDS 穿戴摘要", open_ptds_summary)
+		var ptds_title := "PTDS 穿戴摘要 ✓" if state.task_done("ptds_summary") else "PTDS 穿戴摘要"
+		button(actions, ptds_title, open_ptds_summary)
 
 
 func open_ptds_summary() -> void:
 	var content = _dialog("PTDS 穿戴摘要", "选择本人从 PTDS 导出的 Oura 单日摘要。")
-	paragraph(content, "数值仅在面板中预览，与任务奖励和家人档案分开。", 16)
+	paragraph(content, "本人确认今日摘要即可完成每日修行。步数和睡眠时长只在此预览，所有任务共用一份每日奖励。", 16)
 	var result := label_into(content, "尚未选择摘要。", 22)
 	result.name = "PtdsSummaryResult"
 	var picker := FileDialog.new()
@@ -222,12 +223,36 @@ func open_ptds_summary() -> void:
 	picker.add_filter("*.json", "PTDS 摘要")
 	picker.title = "选择 PTDS 摘要"
 	content.add_child(picker)
-	picker.file_selected.connect(func(path: String): result.text = PtdsSummary.read_file(path))
+	var selected := {"day": ""}
+	var status := label_into(content, "", 16)
 	button(content, "选择摘要 JSON", func(): picker.popup_centered(Vector2i(720, 480)))
+	var confirm := button(content, "确认本人今日记录", func():
+		_show_task_result(game.state.record_ptds_summary(selected.day))
+	, true)
+	confirm.disabled = true
+	picker.file_selected.connect(func(path: String):
+		var summary := PtdsSummary.read_file(path)
+		selected.day = summary.get("date", "")
+		result.text = summary.message
+		confirm.disabled = true
+		status.text = ""
+		if selected.day == "":
+			return
+		if selected.day != game.state.today():
+			status.text = "这份摘要可以预览。仅今日记录可确认。"
+		elif game.state.task_done("ptds_summary"):
+			status.text = "今日 PTDS 记录已确认。"
+		else:
+			confirm.disabled = false
+			if game.state.today() in game.state.rewarded_days:
+				status.text = "今日奖励已领取，确认仅标记任务完成。"
+	)
 	button(content, "返回每日修行", open_record)
 
 func confirm_task(task: String, consent: bool) -> void:
-	var result = game.state.record_task(task, consent)
+	_show_task_result(game.state.record_task(task, consent))
+
+func _show_task_result(result: Dictionary) -> void:
 	if not result.ok:
 		toast(result.message)
 		return

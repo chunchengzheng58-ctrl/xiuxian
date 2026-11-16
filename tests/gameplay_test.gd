@@ -115,6 +115,20 @@ func _run() -> void:
 	loaded.load_game()
 	check(loaded.avatar_id == "female" and loaded.player_name == "清岚" and loaded.profile_created and loaded.cultivation == 137, "Avatar and nickname persist without resetting resources")
 	check(loaded.recovery_status == "active" and loaded.longterm_enabled, "Both care tracks persist")
+	var ptds_state = ClockState.new()
+	ptds_state.save_file_override = path
+	check(not ptds_state.record_ptds_summary("2026-10-29").ok, "Historical PTDS records do not complete today's task")
+	check(ptds_state.record_ptds_summary(ptds_state.today()).rewarded, "The first self-confirmed PTDS summary earns the daily reward")
+	check(ptds_state.cultivation == 90 and ptds_state.qi == 28 and ptds_state.charms == 3 and ptds_state.seals == 9 and ptds_state.days == 29, "PTDS earns the existing fixed reward")
+	check(not ptds_state.record_task("planned_record", true).rewarded, "A regular task after PTDS shares the daily reward")
+	ptds_state.save_game()
+	var ptds_reloaded = ClockState.new()
+	ptds_reloaded.save_file_override = path
+	ptds_reloaded.load_game()
+	check(ptds_reloaded.task_done("ptds_summary") and not ptds_reloaded.record_ptds_summary(ptds_reloaded.today()).ok and ptds_reloaded.cultivation == 90, "Reload preserves PTDS completion and prevents a repeat reward")
+	ptds_reloaded.date_value = "2026-10-31"
+	check(ptds_reloaded.record_ptds_summary(ptds_reloaded.today()).rewarded and ptds_reloaded.cultivation == 100, "A new day can earn a new PTDS reward")
+
 	var scene = load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
@@ -144,6 +158,35 @@ func _run() -> void:
 	consent.button_pressed = true
 	find_button(scene.ui.modal, "确认今日计划").pressed.emit()
 	check(scene.state.task_done("planned_record") and scene.state.cultivation == 90, "Actual second task UI cannot duplicate reward")
+	var ptds_entry := find_button(scene.ui.modal, "PTDS 穿戴摘要")
+	check(ptds_entry != null, "PTDS appears in the daily cultivation panel")
+	ptds_entry.pressed.emit()
+	var picker := scene.ui.modal.find_child("PtdsSummaryPicker", true, false) as FileDialog
+	var ptds_confirm := find_button(scene.ui.modal, "确认本人今日记录")
+	var summary := scene.ui.modal.find_child("PtdsSummaryResult", true, false) as Label
+	check(ptds_confirm.disabled, "PTDS requires a valid summary before confirmation")
+	var ptds_fixture := "user://ptds-test-%d.json" % OS.get_process_id()
+	var fixture := FileAccess.open(ptds_fixture, FileAccess.WRITE)
+	fixture.store_string(JSON.stringify({"schema": "xiuxian.ptds-oura.v1", "date": "2026-10-29", "steps": 8421}))
+	fixture.close()
+	picker.file_selected.emit(ptds_fixture)
+	check(ptds_confirm.disabled and summary.text.contains("8421"), "Earlier summaries remain available for preview")
+	fixture = FileAccess.open(ptds_fixture, FileAccess.WRITE)
+	fixture.store_string(JSON.stringify({"schema": "xiuxian.ptds-oura.v1", "date": scene.state.today(), "steps": 8421, "sleep_minutes": 426}))
+	fixture.close()
+	picker.file_selected.emit(ptds_fixture)
+	check(not ptds_confirm.disabled and summary.text.contains("8421") and summary.text.contains("426") and not scene.state.task_done("ptds_summary"), "Import previews both metrics without completing the task")
+	picker.file_selected.emit(ptds_fixture + ".missing")
+	check(ptds_confirm.disabled and not scene.state.task_done("ptds_summary"), "An invalid import clears the previous selection")
+	picker.file_selected.emit(ptds_fixture)
+	ptds_confirm.pressed.emit()
+	check(scene.state.task_done("ptds_summary") and scene.state.cultivation == 90, "Explicit confirmation after another task completes PTDS without a second reward")
+	find_button(scene.ui.modal, "PTDS 穿戴摘要").pressed.emit()
+	picker = scene.ui.modal.find_child("PtdsSummaryPicker", true, false) as FileDialog
+	picker.file_selected.emit(ptds_fixture)
+	check(find_button(scene.ui.modal, "确认本人今日记录").disabled, "Reimporting on the same day keeps confirmation disabled")
+	DirAccess.remove_absolute(ptds_fixture)
+
 	scene.ui.close_modal()
 	scene.ui.open_recovery()
 	var family = scene.ui.modal.find_children("*", "CheckBox", true, false)[0]
