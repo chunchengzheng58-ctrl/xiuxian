@@ -83,6 +83,11 @@ export async function buildApp(options: AppOptions = {}) {
     validateCommand(input.command, input.payload);
     return success(await game.execute(current.account_id, input.command, input.payload, request.headers['idempotency-key'] as string | undefined));
   });
+  app.post('/api/v2/ptds/confirm', { config: { rateLimit: { max: 12, timeWindow: '1 minute' } }, schema: routeSchema('game', '本人确认今日 PTDS 摘要；仅接收角色和日期', objectSchema({ cultivator_id: stringField, date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } })) }, async request => {
+    const input = request.body as { cultivator_id: string; date: string };
+    return success(health.confirmPtds(session(request).account_id, input.cultivator_id, input.date));
+  });
+
   app.get('/api/v2/snapshot', { schema: routeSchema('game', '当前账号的权威游戏快照') }, async request => success(game.snapshot(session(request).account_id)));
   app.post('/api/v2/realtime/ticket', { schema: routeSchema('realtime', '签发 60 秒有效的一次性连接票据', objectSchema({})) }, async request => success(realtime.ticket(session(request))));
   realtime.register(app, origins);

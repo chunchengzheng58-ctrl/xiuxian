@@ -26,6 +26,46 @@
       #stage:not(.editing) #rotate { display: block; }
     }
   </style>
+<script>
+window.xiuxianPickPtdsSummary = (receive) => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.hidden = true;
+  document.body.appendChild(input);
+
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    input.remove();
+    if (!file) return;
+    if (file.size > 4096) {
+      receive(false, "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。");
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      receive(false, "无法读取摘要文件。");
+      return;
+    }
+    receive(true, text);
+  }, {once: true});
+  const dialog = document.createElement("dialog");
+  dialog.id = "ptds-browser-picker";
+  const choose = document.createElement("button");
+  choose.textContent = "从本机选择 JSON";
+  const cancel = document.createElement("button");
+  cancel.textContent = "取消";
+  choose.onclick = () => input.click();
+  cancel.onclick = () => dialog.close();
+  input.addEventListener("change", () => dialog.close(), {once: true});
+  dialog.addEventListener("close", () => { input.remove(); dialog.remove(); document.getElementById("canvas").focus(); }, {once: true});
+  dialog.append(choose, cancel);
+  document.body.appendChild(dialog);
+  dialog.showModal();
+};
+</script>
 </head>
 <body>
   <main id="stage">
