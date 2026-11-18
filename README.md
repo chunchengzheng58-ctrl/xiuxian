@@ -1,4 +1,10 @@
-# 疯狂修仙，中（Godot 像素闯关）
+# 疯狂修仙，中
+
+一款以像素仙村为起点的修仙 RPG。创建自己的修士，闯秘境、练招式、养装备，也可以组队探索、与好友论剑，或者参加公开匹配冲击榜单。项目由 Godot 客户端和独立游戏服务端组成。
+
+[官网直接玩](https://madxiuxian.com/) · [Windows x64 下载](https://madxiuxian.com/downloads/xiuxian-full-ptds-ebb291d-windows-x64.zip)
+
+登录后从「每日修行 → PTDS 穿戴摘要」确认当天记录。接入方法见 [PTDS 指南](docs/PTDS.md)。社群功能见 [社群说明](docs/SOCIAL_SYSTEM.md)。
 
 本 README 对应当前源码开发版。启动脚本会加载它所在目录的项目；已打开的旧窗口、已导出的客户端和网页部署不会自动变成此版本。试玩步骤见 [新版试玩指南](docs/PLAYTEST_GUIDE.md)，交付前仍需完成的验证见 [发布核对](docs/RELEASE_READINESS.md)。
 

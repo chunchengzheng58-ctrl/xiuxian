@@ -170,6 +170,7 @@
       .field input, .field select, .field textarea { scroll-margin-block: 16px; }
       .primary, .secondary, .sample-btn { min-height: 44px; font-size: 14px; }
     }
+      body.keyboard-open .app-shell { padding-bottom:calc(24px + var(--keyboard-height, 0px) + env(safe-area-inset-bottom)); }
   </style>
 </head>
 <body>
@@ -487,5 +488,23 @@
     dropZone.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
     refreshEngineStatus();
   </script>
+<script>
+  const viewport = window.visualViewport;
+  if (viewport) {
+    const fitKeyboard = () => {
+      const active = document.activeElement;
+      const editing = active?.matches('textarea, input:not([type="checkbox"]):not([type="radio"])');
+      const height = editing ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
+      document.body.classList.toggle('keyboard-open', height > 80);
+      document.body.style.setProperty('--keyboard-height', height + 'px');
+      if (height > 80 && active.getBoundingClientRect().bottom > viewport.height + viewport.offsetTop) {
+        active.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    viewport.addEventListener('resize', fitKeyboard);
+    document.addEventListener('focusin', fitKeyboard);
+    document.addEventListener('focusout', () => requestAnimationFrame(fitKeyboard));
+  }
+</script>
 </body>
 </html>

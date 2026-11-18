@@ -277,7 +277,7 @@ test('v7存档迁移最新版保留余额、流派强化装备、账号会话与
   await first.app.close();
   // Remove unused later schema to construct a v7 database with valid v1..v7 checksums.
   const raw = new DatabaseSync(path);
-  raw.exec(`DROP TABLE story_nodes; DROP TABLE adventure_awards;
+  raw.exec(`DROP TABLE world_boss_contributions; DROP TABLE world_bosses; DROP TABLE world_messages; DROP TABLE pvp_matches; DROP TABLE community_reactions; DROP TABLE community_comments; DROP TABLE community_posts; DROP TABLE community_members; DROP TABLE communities; DROP TABLE story_nodes; DROP TABLE adventure_awards;
     DROP INDEX arena_ranked_history; DROP TABLE arena_queue; DROP TABLE arena_ratings;
     ALTER TABLE arena_duels DROP COLUMN mode;
     ALTER TABLE arena_duels DROP COLUMN challenger_rating_before; ALTER TABLE arena_duels DROP COLUMN challenger_rating_after;
@@ -286,7 +286,7 @@ test('v7存档迁移最新版保留余额、流派强化装备、账号会话与
   raw.close();
   const migrated = await buildApp(options);
   try {
-    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 10);
+    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 11);
     assert.equal(migrated.auth.authenticate(`Bearer ${login.token}`).account_id, account.account_id);
     assert.deepEqual(migrated.game.characterSnapshot(account.account_id, actor), before);
     assert.deepEqual(migrated.db.all('SELECT * FROM ledger ORDER BY rowid'), ledger);
