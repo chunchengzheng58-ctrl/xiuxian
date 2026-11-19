@@ -340,7 +340,8 @@ func _flush_releases(delta: float) -> void:
 		_redraw()
 
 func _reset_state() -> void:
-	_captured_fingers.clear()
+	# Keep finger capture until the physical release, even when a modal hides
+	# the controls; otherwise that release can click the newly opened panel.
 	_joystick_index = -1
 	_joystick_value = Vector2.ZERO
 	if _sprint_held:
@@ -414,6 +415,8 @@ func _battle_layout() -> Array:
 		{"label": "闪避", "offset": Vector2(112, 287), "r": 61.0},
 		{"label": "阵眼", "offset": Vector2(388, 251), "r": 55.0},
 	]
+	if state.size() > 5:
+		specs.append({"label": "剑域", "offset": Vector2(430, 86), "r": 58.0})
 	var out: Array = []
 	for i in range(specs.size()):
 		var spec: Dictionary = specs[i]

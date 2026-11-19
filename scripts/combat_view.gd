@@ -67,6 +67,9 @@ var cast_direction = Vector2.RIGHT
 var dodge_origin = Vector2.ZERO
 var dodge_visual: float = 0
 var hurt_visual: float = 0
+var boss_hurt_visual: float = 0.0
+var boss_rage_visual: float = 0.0
+var boss_recoil := Vector2.ZERO
 var heal_visual: float = 0
 var shield_impact: float = 0
 var shield_break_visual: float = 0
@@ -80,6 +83,7 @@ var heal_was_unlocked: bool = false
 var facing = Vector2.RIGHT
 var skill_nodes: Array[Button] = []
 var basic_button: Button
+var ult_button: Button
 var top_label: Label
 var meter: ProgressBar
 var player_status: Label
@@ -90,6 +94,14 @@ var message: Label
 var _skill_row: HBoxContainer
 var _keyboard_tips: Label
 var _touch_pause_button: Button
+var combo_banner: Label
+var flow_banner: Label
+var finisher_visual: float = 0.0
+var flow_visual: float = 0.0
+var ultimate_visual: float = 0.0
+var finisher_origin := Vector2.ZERO
+var finisher_direction := Vector2.RIGHT
+var _last_hitstreak: int = 0
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -246,20 +258,38 @@ func _build_hud() -> void:
 	_skill_row.add_theme_constant_override("separation", 10)
 	add_child(_skill_row)
 	basic_button = ui.button(_skill_row, "普攻 [J]\n近身命中 · 灵力 +5", basic_attack)
-	basic_button.custom_minimum_size = Vector2(250, 86)
-	basic_button.add_theme_font_size_override("font_size", 17)
+	basic_button.custom_minimum_size = Vector2(210, 86)
+	basic_button.add_theme_font_size_override("font_size", 16)
 	for i in range(4):
 		var choice = i
 		var button = ui.button(_skill_row, "", func(): use_skill(choice), i == 0)
-		button.custom_minimum_size = Vector2(270, 86)
-		button.add_theme_font_size_override("font_size", 17)
+		button.custom_minimum_size = Vector2(220, 86)
+		button.add_theme_font_size_override("font_size", 16)
 		skill_nodes.append(button)
-	_keyboard_tips = ui.label_into(self, "WASD 移动  ·  按住 J 连击  ·  1 剑诀  ·  2 / 空格 踏云  ·  3 / K 护盾  ·  4 / R 归元  ·  体力自动恢复 · P 暂停", 16, Color("fff0c6"))
+	ult_button = ui.button(_skill_row, "赤霄剑域 [5/T]\n剑意 0%", use_ultimate)
+	ult_button.custom_minimum_size = Vector2(240, 86)
+	ult_button.add_theme_font_size_override("font_size", 16)
+	_keyboard_tips = ui.label_into(self, "WASD 移动 · J 三段终结 · 命中后 1 行云 · 2/空格 踏云 · 3/K 护盾 · 4/R 归元 · 5/T 剑域 · P 暂停", 16, Color("fff0c6"))
 	_keyboard_tips.position = Vector2(25, 858)
 	_keyboard_tips.size.x = 1390
 	_keyboard_tips.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_keyboard_tips.add_theme_color_override("font_outline_color", Color("29242e"))
 	_keyboard_tips.add_theme_constant_override("outline_size", 5)
+	# 连击与行云提示放在左侧空区，不遮挡 Boss 与弹道。
+	combo_banner = ui.label_into(self, "", 44, Color("ffe3a0"))
+	combo_banner.position = Vector2(28, 362)
+	combo_banner.size = Vector2(320, 62)
+	combo_banner.add_theme_font_override("font", game.title_font)
+	combo_banner.add_theme_color_override("font_outline_color", Color("3a2a1c"))
+	combo_banner.add_theme_constant_override("outline_size", 8)
+	combo_banner.pivot_offset = Vector2(0, 31)
+	combo_banner.hide()
+	flow_banner = ui.label_into(self, "", 19, Color("b1fae7"))
+	flow_banner.position = Vector2(30, 430)
+	flow_banner.size = Vector2(340, 30)
+	flow_banner.add_theme_color_override("font_outline_color", Color("20302c"))
+	flow_banner.add_theme_constant_override("outline_size", 5)
+	flow_banner.hide()
 
 func _update_touch_hud(enabled: bool) -> void:
 	_skill_row.visible = not enabled
@@ -274,13 +304,16 @@ func touch_actions_active() -> bool:
 func battle_action_state() -> Array:
 	# Match the mobile layout and reuse the desktop buttons' availability checks.
 	var heal_hint := "" if entered_state.heal_unlocked() else "未解锁"
-	return [
+	var actions := [
 		{"label": "普攻", "disabled": basic_button.disabled, "cooldown": rules.attack_cd},
 		{"label": "剑诀", "disabled": skill_nodes[0].disabled, "cooldown": rules.sword_cd},
 		{"label": "护盾", "disabled": skill_nodes[2].disabled, "cooldown": rules.shield_cd},
 		{"label": "闪避", "disabled": skill_nodes[1].disabled, "cooldown": rules.dodge_cd},
 		{"label": "归元", "disabled": skill_nodes[3].disabled, "cooldown": rules.heal_cd, "hint": heal_hint},
 	]
+	if rules.brain != null:
+		actions.append({"label": "剑域", "disabled": ult_button.disabled, "cooldown": 0.0, "hint": "%d%%" % int(rules.ult_gauge)})
+	return actions
 
 func perform_action(action: int) -> void:
 	if not touch_actions_active():
@@ -291,6 +324,7 @@ func perform_action(action: int) -> void:
 		2: use_skill(2)
 		3: use_skill(1)
 		4: use_skill(3)
+		5: use_ultimate()
 
 func refresh() -> void:
 	top_label.text = "%s  %d / %d    用时 %.1f 秒" % [rules.boss_name, rules.boss_hp, rules.boss_max_hp, rules.elapsed]
@@ -343,10 +377,11 @@ func refresh() -> void:
 	elif rules.slow_time > 0.0:
 		player_status.text += "\n迟滞 · 移速下降"
 	if rules.brain != null:
+		player_status.text += "\n剑意 %d / 100" % int(rules.ult_gauge)
 		player_status.text += "\n" + ("反击就绪 %.1f 秒" % rules.counter_time if rules.counter_time>0 else "普攻连击 %d / 3" % rules.combo_step)
-	basic_button.disabled = rules.finished or airborne or roll_remaining>0 or rules.attack_cd > 0 or rules.heal_cast > 0
+	basic_button.disabled = rules.finished or airborne or roll_remaining>0 or rules.ult_active or rules.attack_cd > 0 or rules.heal_cast > 0
 	var cooldowns = [rules.sword_cd, rules.dodge_cd, rules.shield_cd, rules.heal_cd]
-	var descriptions = ["18 灵力 · 路径剑气", "24 体力 · 位移 / 闪避", "24 灵力 · 短时护盾", "45 灵力 · 吐纳恢复"]
+	var descriptions = ["18 灵力 · 行云 12 · 充能", "24 体力 · 精准闪避充能", "24 灵力 · 抵挡后反击", "45 灵力 · 恢复并净化"]
 	for i in range(4):
 		var unlocked = i != 3 or entered_state.heal_unlocked()
 		var enough = rules.stamina >= BossRules.DODGE_COST if i == 1 else rules.mp >= [BossRules.SWORD_COST, 0, BossRules.SHIELD_COST, BossRules.HEAL_COST][i]
@@ -360,7 +395,38 @@ func refresh() -> void:
 		if i == 3 and rules.heal_cast > 0:
 			detail = "吐纳 %.1f 秒" % rules.heal_cast
 		skill_nodes[i].text = SKILL_NAMES[i] + " [%d]\n" % (i + 1) + detail
-		skill_nodes[i].disabled = not unlocked or (airborne and i != 2) or (roll_remaining>0 and i!=1) or rules.finished or rules.heal_cast > 0 or cooldowns[i] > 0 or not enough or (i == 3 and rules.hp == rules.max_hp)
+		skill_nodes[i].disabled = not unlocked or (airborne and i != 2) or (roll_remaining>0 and i!=1) or rules.finished or rules.ult_active or rules.heal_cast > 0 or cooldowns[i] > 0 or not enough or (i == 3 and rules.hp == rules.max_hp)
+	ult_button.visible = rules.brain != null
+	var ult_detail := "剑意 %d%% · 三段斩" % int(rules.ult_gauge)
+	if rules.ult_active:
+		ult_detail = "剑域展开 · 可移动"
+	elif rules.ult_gauge >= BossRules.ULT_MAX:
+		ult_detail = "剑意已满 · 可释放"
+	ult_button.text = "赤霄剑域 [5/T]\n" + ult_detail
+	ult_button.disabled = rules.brain == null or rules.finished or airborne or roll_remaining > 0 or rules.ult_active or rules.heal_cast > 0 or not rules.pending_action.is_empty() or rules.ult_gauge < BossRules.ULT_MAX
+	_refresh_combo_hud()
+
+func _refresh_combo_hud() -> void:
+	# 连击数字随命中弹跳，5 连击后转为更亮的金色，提示已有伤害加成。
+	if rules.hitstreak >= 2 and not rules.finished:
+		combo_banner.text = "%d 连击" % rules.hitstreak
+		combo_banner.show()
+		if rules.hitstreak != _last_hitstreak:
+			combo_banner.scale = Vector2(1.25, 1.25)
+			create_tween().tween_property(combo_banner, "scale", Vector2.ONE, 0.16)
+		combo_banner.add_theme_color_override("font_color", Color("ffd27a") if rules.hitstreak >= 5 else Color("ffe3a0"))
+	else:
+		combo_banner.hide()
+	_last_hitstreak = rules.hitstreak
+	flow_banner.visible = rules.flow_time > 0.0 and not rules.finished
+	if flow_banner.visible:
+		flow_banner.text = "行云就绪 · 按 1 接剑气（%d 灵力）" % BossRules.FLOW_COST
+	if rules.next_finisher():
+		basic_button.text = "终结斩 [J]\n范围提升 · 破势大增"
+	elif rules.flow_time > 0.0:
+		basic_button.text = "普攻 [J]\n已命中 · 可按 1 行云"
+	else:
+		basic_button.text = "普攻 [J]\n近身命中 · 灵力 +5"
 
 func _slash(is_sword: bool, damage: int, impacts: Array = [], counter: bool = false) -> void:
 	sword_visual = is_sword
@@ -373,7 +439,7 @@ func _slash(is_sword: bool, damage: int, impacts: Array = [], counter: bool = fa
 	cast_direction = (rules.boss_position - hero.position).normalized()
 	if damage > 0: _landed_impact(damage,impacts,counter,is_sword)
 
-func _landed_impact(damage: int, impacts: Array, counter: bool, is_sword: bool) -> void:
+func _landed_impact(damage: int, impacts: Array, counter: bool, is_sword: bool, finisher: bool = false, flowing: bool = false, ultimate: bool = false, ult_wave: int = 0) -> void:
 	if damage<=0: return
 	hurt_visual = .22
 	if counter: counter_visual = .7
@@ -381,11 +447,53 @@ func _landed_impact(damage: int, impacts: Array, counter: bool, is_sword: bool) 
 		hit_stop = .060 if counter else (.055 if is_sword else .035)
 		_jolt(5 if is_sword or counter else 3, .12)
 		_sound("hit")
+	if finisher:
+		# 终结斩：更长顿帧、更强震屏，并触发大刀光与地面尘环。
+		hit_stop = .085
+		_jolt(9, .22)
+		finisher_visual = .5
+		finisher_origin = hero.position + Vector2(22, -75)
+		finisher_direction = (rules.boss_position - hero.position).normalized()
+		_sound("stagger")
+	if flowing:
+		flow_visual = .45
+	if ultimate:
+		hit_stop = .055 if ult_wave < 2 else .085
+		_jolt(4.0 + ult_wave * 2.0, .14 if ult_wave < 2 else .20)
+		if ult_wave == 2:
+			_sound("stagger")
 	for impact in impacts:
 		var target_height := boss_height if impact.boss else 82.0
 		var position := Vector2(impact.position) - Vector2(0, target_height * .42)
-		hit_bursts.append({"position": position, "life": HIT_BURST_TIME, "counter": counter, "sword": is_sword})
-		floating("-%d" % impact.damage,Vector2(impact.position)-Vector2(30,boss_height+10 if impact.boss else 100),Color("ffe5a3") if counter else Color("c8f3d6"))
+		hit_bursts.append({"position": position, "life": HIT_BURST_TIME, "counter": counter, "sword": is_sword, "finisher": finisher, "flow": flowing, "ultimate": ultimate, "wave": ult_wave})
+		var text := "-%d" % impact.damage
+		var tint := Color("ffe5a3") if counter else Color("c8f3d6")
+		if ultimate:
+			text = "剑域·%d " % (ult_wave + 1) + text
+			tint = Color("e39a92")
+		elif finisher:
+			text = "终结 " + text
+			tint = Color("e48a83")
+		elif flowing:
+			text = "行云 " + text
+			tint = Color("b1fae7")
+		floating(text,Vector2(impact.position)-Vector2(30,boss_height+10 if impact.boss else 100),tint)
+
+func use_ultimate() -> void:
+	if _settings_open() or paused:
+		return
+	var direction: Vector2 = (rules.boss_position - hero.position).normalized()
+	var result: Dictionary = rules.ultimate(hero.position, direction)
+	if not result.get("ok", false):
+		floating(str(result.get("message", "剑意未满")), hero.position - Vector2(0, 140), Color("c9bda5"))
+		return
+	ultimate_visual = 1.2
+	finisher_visual = 0.0
+	flow_visual = 0.0
+	cast_visual = 0.0
+	message.text = "赤霄剑域 · 三式连落，仍可移动"
+	_sound("phase")
+	refresh()
 
 func basic_attack() -> void:
 	if _settings_open():
@@ -413,6 +521,8 @@ func use_skill(choice: int) -> void:
 			message.text = result.message
 			if result.ok:
 				_slash(true, result.damage, result.get("impacts",[]),result.get("counter",false))
+				if result.get("flow",false):
+					flow_visual = .5
 		1:
 			if rules.dodge():
 				dodge_origin = hero.position
@@ -485,6 +595,11 @@ func _process(delta: float) -> void:
 	landing_visual = maxf(0.0, landing_visual - delta)
 	perfect_visual = maxf(0,perfect_visual-delta)
 	counter_visual = maxf(0,counter_visual-delta)
+	finisher_visual = maxf(0.0, finisher_visual - delta)
+	flow_visual = maxf(0.0, flow_visual - delta)
+	ultimate_visual = maxf(0.0, ultimate_visual - delta)
+	if rules.ult_active:
+		ultimate_visual = maxf(ultimate_visual, .18)
 	phase_flash = maxf(0,phase_flash-delta)
 	shake = maxf(0, shake-delta)
 	world.position = Vector2(sin(clock*111), cos(clock*137)) * shake_strength * minf(1, shake*9) if shake > 0 else Vector2.ZERO
@@ -500,6 +615,9 @@ func _process(delta: float) -> void:
 	cast_visual = maxf(0, cast_visual - delta)
 	dodge_visual = maxf(0, dodge_visual - delta)
 	hurt_visual = maxf(0, hurt_visual - delta)
+	boss_hurt_visual = maxf(0.0, boss_hurt_visual - delta)
+	boss_rage_visual = maxf(0.0, boss_rage_visual - delta)
+	boss_recoil = boss_recoil.move_toward(Vector2.ZERO, delta * 95.0)
 	heal_visual = maxf(0, heal_visual - delta)
 	shield_impact = maxf(0, shield_impact - delta)
 	shield_break_visual = maxf(0, shield_break_visual - delta)
@@ -517,6 +635,8 @@ func _process(delta: float) -> void:
 		else:
 			if hero_moving: facing = direction.normalized()
 			var movement := .3 if rules.heal_cast>0 else (.65 if cast_visual>0 else 1.0)
+			if rules.ult_active:
+				movement *= .65
 			if rules.slow_time > 0.0:
 				movement *= .62
 			hero.position += direction*255*delta*movement
@@ -577,6 +697,7 @@ func _input(event: InputEvent) -> void:
 		KEY_2, KEY_SPACE: use_skill(1)
 		KEY_3, KEY_K: use_skill(2)
 		KEY_4, KEY_R: use_skill(3)
+		KEY_5, KEY_T: use_ultimate()
 		_: return
 	get_viewport().set_input_as_handled()
 
@@ -632,6 +753,14 @@ func show_result() -> void:
 		ui.paragraph(content, "首通进度已保存 · 当前境界 " + entered_state.realm(), 18)
 		if not heal_was_unlocked and entered_state.heal_unlocked():
 			ui.label_into(content, "新技能解锁：饕餮归元 [4]", 21, Color("3a6b59"))
+		if not encounter.is_empty() and entered_state.has_method("boss_unlocked"):
+			var next_index := int(encounter.index) + 1
+			if next_index < 20:
+				var next = Catalogue.at(next_index)
+				if entered_state.boss_unlocked(next.id):
+					ui.label_into(content, "下一关已开放：第 %02d 关 · %s" % [next_index + 1, next.name], 20, Color("8a4f3f"))
+			else:
+				ui.label_into(content, "二十长廊已全线贯通", 20, Color("8a4f3f"))
 	else:
 		ui.paragraph(content, "健康属性与已通关记录保留。可再次练习，也可更新健康档案后再挑战。", 17)
 	var actions = HBoxContainer.new()
@@ -724,8 +853,19 @@ func _enemy_feedback(event: Dictionary, displaced: bool = false) -> void:
 	match str(event.get("event", "")):
 		"player_hit":
 			var hit: Dictionary = event.result
-			_landed_impact(int(hit.damage),hit.get("impacts",[]),hit.get("counter",false),event.kind=="sword")
+			var is_ultimate := bool(hit.get("ultimate", false))
+			var wave := int(hit.get("ult_wave", 0))
+			_landed_impact(int(hit.damage),hit.get("impacts",[]),hit.get("counter",false),event.kind=="sword" or is_ultimate,hit.get("finisher",false),hit.get("flow",false),is_ultimate,wave)
+			if int(hit.damage) > 0:
+				boss_hurt_visual = .22 if is_ultimate else (.24 if hit.get("finisher", false) else .16)
+				var away: Vector2 = (rules.boss_position - hero.position).normalized()
+				boss_recoil = away * (10.0 + wave * 2.0 if is_ultimate else (13.0 if hit.get("finisher", false) else 7.0))
 			message.text = hit.message
+		"enraged":
+			boss_rage_visual = 2.4
+			floating("激怒", rules.boss_position - Vector2(28, boss_height + 4), Color("dc7770"))
+			message.text = rules.boss_name + "被激怒 · 蓄势回击，留意完整预警。"
+			_sound("phase")
 		"windup":
 			var kind: String = str(rules.brain.move.kind) if rules.brain != null else "circle"
 			var advice := {"charge":"横向闪开冲锋路线", "leap":"离开落点，等它落地再反击", "volley":"从弹道之间穿过", "nova":"贴近内圈，或退到环外", "slash":"绕到侧后方", "beam":"横向移出吐息线", "eruption":"观察起势，及时移动", "cross":"走向十字之间的空隙"}
@@ -737,6 +877,8 @@ func _enemy_feedback(event: Dictionary, displaced: bool = false) -> void:
 				elif rules.brain.move.get("style") == "sap":
 					hint = "藤脉已锁定 · 横移避开连续吸血"
 			message.text = str(event.get("attack", rules.boss_name)) + " · " + hint
+			if rules.brain != null and rules.brain.move.get("provoked", false):
+				message.text = "激怒回击 · " + message.text
 			_sound("tell")
 		"release":
 			_sound("rush" if event.kind in ["charge","leap"] else ("shot" if event.kind == "volley" else "impact"))
@@ -782,13 +924,13 @@ func _enemy_feedback(event: Dictionary, displaced: bool = false) -> void:
 			hit_stop = .045
 			_sound("perfect")
 			floating("精准闪避",hero.position-Vector2(40,175),Color("ffe6aa"))
-			message.text = "精准闪避 · 体力 +10，2秒内命中可强化反击。"
+			message.text = "精准闪避 · 体力 +10、剑意 +20，2秒内可强化反击。"
 		"impact": _jolt(5, .18)
 		"recover": message.text = "收招窗口 · 靠近普攻回灵，或用剑诀追击。"
 		"evaded": message.text = "闪避成功 · 留意下一段攻击。"
 		"blocked":
 			shield_impact = .6
-			message.text = "云罡抵挡 %d 点伤害。" % event.absorbed
+			message.text = "云罡抵挡 %d · 剑意 +10，反击就绪。" % event.absorbed
 		"hurt":
 			hero_hurt_visual = .30
 			if event.get("attack_interrupted",false): cast_visual = 0
@@ -820,12 +962,17 @@ func _boss_pose(_delta: float) -> void:
 	if not boss_bank.is_empty(): Actions.apply(dragon,boss_bank,boss_frame_index,boss_height)
 	var lift := 0.0
 	if rules.phase=="attack" and rules.brain.move.kind=="leap" and not signature_attack: lift = sin(rules.brain.progress()*PI)*145
-	dragon.position = boss_anchor+Vector2(0,-lift)
-	dragon.rotation = 0
+	dragon.position = boss_anchor+Vector2(0,-lift) + boss_recoil
+	dragon.rotation = clampf(boss_recoil.x * .002, -.026, .026)
 	dragon.flip_h = rules.brain.facing.x>.15
 	dragon.z_index = 3 if boss_anchor.y>hero.position.y else 1
 	hero.z_index = 2
-	dragon.modulate = Color(1.3,1.15,1.05) if hurt_visual>0 and not _reduced_flash() else Color.WHITE
+	if boss_hurt_visual > 0.0 and not _reduced_flash():
+		dragon.modulate = Color(1.08, .76, .78)
+	elif boss_rage_visual > 0.0 and not _reduced_flash():
+		dragon.modulate = Color(1.08, .86, .86)
+	else:
+		dragon.modulate = Color.WHITE
 	if rules.finished and rules.won: dragon.modulate = Color(.7,.7,.7,.7)
 
 func _exit_tree() -> void:
