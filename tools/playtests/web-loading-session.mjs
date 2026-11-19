@@ -1,12 +1,12 @@
 import {createRequire} from 'node:module';
-import {readFileSync,writeFileSync,mkdirSync,linkSync,readdirSync,statSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,linkSync,readdirSync,statSync,existsSync,unlinkSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 const repo=resolve(import.meta.dirname,'../..'), site=resolve(process.argv[2]);
 const out=resolve(repo,'../../work/loading-verification');mkdirSync(out,{recursive:true});
 const root=join(out,'site'), version='web-'+'a'.repeat(40), dir=join(root,version);mkdirSync(dir,{recursive:true});
-for(const name of readdirSync(site))if(statSync(join(site,name)).isFile()&&name!=='index.html')try{linkSync(join(site,name),join(dir,name))}catch{}
+for(const name of readdirSync(site))if(statSync(join(site,name)).isFile()&&name!=='index.html'){const target=join(dir,name);if(existsSync(target))unlinkSync(target);linkSync(join(site,name),target)}
 mkdirSync(join(dir,'loading'),{recursive:true});try{linkSync(join(site,'loading/title.png'),join(dir,'loading/title.png'))}catch{}
 writeFileSync(join(root,'game-cache-sw.js'),readFileSync(join(site,'game-cache-sw.js')));
 const control=readFileSync(join(repo,'tools/playtests/web-control.gd'),'utf8').replace('"field":','"logout-test":\n\t\t\tscene.account_api.logout()\n\t\t"field":');
@@ -25,7 +25,7 @@ await server.app.listen({host:'127.0.0.1',port:0});
 const origin='http://127.0.0.1:'+server.app.server.address().port;
 const require=createRequire(import.meta.url);const {chromium}=require('C:/Users/zcc36/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',args:['--enable-unsafe-swiftshader']});
-const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();let serial=0;const errors=[];page.on('console',m=>{if(m.text().includes('SCRIPT ERROR'))errors.push(m.text())});
+const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();let serial=0;const errors=[];page.on('console',m=>{if(m.type()==='warning')console.log('BROWSER',m.text());if(m.text().includes('SCRIPT ERROR'))errors.push(m.text())});
 const action=async data=>{const id=++serial;await page.evaluate(x=>{window.__gameResult=null;window.__gameRequest=JSON.stringify(x)},{id,...data});await page.waitForFunction(id=>{try{return JSON.parse(window.__gameResult)?.id===id}catch{return false}},id);return (await page.evaluate(()=>JSON.parse(window.__gameResult))).result};
 const until=async expected=>{for(let i=0;i<150;i++){if((await action({op:'inspect'})).ready===expected)return;await page.waitForTimeout(100)}throw Error('Login readiness timeout: '+expected)};
 const prefs=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('xiuxian.login.v1')||'{}'));
@@ -35,8 +35,9 @@ try{
  assert((await action({op:'click',text:'记住账号并保持登录（此设备）'})).ok);
  await action({op:'login',username,password});await until(true);
  let saved=await prefs();assert(saved.token);assert.equal(saved.username,username);assert(!JSON.stringify(saved).includes(password));
- await page.waitForFunction(async()=>{const c=await caches.open('xiuxian-game-resources-v1');return !!await c.match(new URL('index.pck',document.baseURI))});
- const count=await page.evaluate(async()=> (await (await caches.open('xiuxian-game-resources-v1')).keys()).length);assert(count>=2);
+ for(let i=0;i<200;i++) { const ready = await page.evaluate(async()=>{const c=await caches.open('xiuxian-game-resources-v1');return !!await c.match(new URL('index.pck',document.baseURI)) && !!await c.match(new URL('index.wasm',document.baseURI))}); if(ready)break; await page.waitForTimeout(100); }
+
+ const count=await page.evaluate(async()=> (await (await caches.open('xiuxian-game-resources-v1')).keys()).length);console.log('CACHE_DIAGNOSTIC',count,await page.evaluate(async()=>({keys:(await (await caches.open('xiuxian-game-resources-v1')).keys()).map(k=>k.url),hint:document.querySelector('#cache-details').textContent})));assert(count>=2);
  await page.reload();await page.waitForFunction(()=>window.__gameReady===true,null,{timeout:90000});await until(true);
  assert.equal((await prefs()).token,saved.token);console.log('PASS remembered session restores after reload; no plaintext password saved');
  await action({op:'logout-test'});await until(false);assert.equal((await prefs()).token,'');

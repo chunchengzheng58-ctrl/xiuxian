@@ -48,7 +48,8 @@
     }},
     {"id": "story", "commands": {
       "story.snapshot": {"cultivator_id": "string"},
-      "story.advance": {"cultivator_id": "string", "node_id": "string"}
+      "story.advance": {"cultivator_id": "string", "node_id": "string"},
+      "story.variant": {"cultivator_id": "string", "companion_variant": "string"}
     }},
     {"id": "social", "commands": {
       "social.visit": {"cultivator_id": "string"},

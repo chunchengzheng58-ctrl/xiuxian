@@ -690,7 +690,12 @@ func load_data(data: Dictionary) -> void:
 	if int(data.get("schema", 1)) < 6 and today() in rewarded_days:
 		equipment.qi = Equipment.DAILY_QI
 
-func reset_demo() -> void:
+func reset_demo() -> bool:
+	# A server-backed state is a read model, never a disposable demo save.
+	# Keep this domain guard even if a stale or modified client exposes the button.
+	if is_remote():
+		push_warning("Demo reset rejected for a server-backed cultivator.")
+		return false
 	lifecycle_v2 = {}
 	lifecycle_load_error = ""
 	equipment = Equipment.fresh()
@@ -723,7 +728,7 @@ func reset_demo() -> void:
 	medication_required = true
 	recovery_status = "not_started"
 	trial_cleared = false
-	save_game()
+	return save_game()
 
 ## schema 6 的可选扩展；家族外层 schema 8 不改，旧版无此字段时从已确认恢复篇章迁移。
 func lifecycle_record() -> Dictionary:

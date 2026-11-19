@@ -2,6 +2,7 @@ extends VBoxContainer
 
 const Catalogue = preload("res://scripts/trial_catalogue.gd")
 const Adventure = preload("res://scripts/adventure_catalogue.gd")
+const StoryScenePlayer = preload("res://scripts/story_scene_player.gd")
 var game: Node
 var ui: Control
 var cultivator_id: String
@@ -14,6 +15,9 @@ var current: Dictionary = {}
 var busy := false
 var fetching := false
 var refresh_again := false
+var story_data: Dictionary = {}
+var scene_player: Control
+var pending_stage := ""
 
 func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -67,11 +71,17 @@ func refresh() -> void:
 		return
 	fetching = false
 	if result.ok:
+		fetching = true
+		var story_result := await story_command("snapshot")
+		if is_queued_for_deletion():
+			return
+		fetching = false
+		if story_result.ok:
+			story_data = story_result.data
 		if status_label.text == "正在读取秘境…":
 			status_label.text = ""
-		if current != result.data:
-			current = result.data
-			render()
+		current = result.data
+		render()
 	else:
 		status_label.text = result.message
 	if refresh_again:
@@ -111,14 +121,23 @@ func render() -> void:
 		ui.label_into(details, str(stage.name) + (" · 已首通" if stage.get("cleared", false) else ""), 22)
 		ui.paragraph(details, str(stage.get("subtitle", "")), 16)
 		ui.paragraph(details, str(stage.get("recommendation", "")) + "\n" + str(stage.get("tactics", "")), 16)
+		ui.paragraph(details, str(stage.get("story", "")), 17)
 		ui.paragraph(details, "首通：" + reward_text(stage.get("first_reward", {})) + "\n再战：" + reward_text(stage.get("repeat_reward", {})), 16)
 		if not stage.get("unlocked", false):
 			ui.paragraph(details, str(stage.get("unlock_reason", "尚未解锁")), 16)
-		var enter: Button = ui.button(row, "再次挑战" if stage.get("cleared", false) else "进入秘境", start.bind(str(stage.stage_id)), true)
-		enter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		enter.disabled = busy or not stage.get("unlocked", false) or (active is Dictionary and not active.is_empty())
+		var actions := VBoxContainer.new()
+		actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(actions)
+		var enter: Button = ui.button(actions, "再次挑战" if stage.get("cleared", false) else "进入秘境", start.bind(str(stage.stage_id)), true)
+		enter.disabled = busy or is_instance_valid(scene_player) or not stage.get("unlocked", false) or (active is Dictionary and not active.is_empty())
 		if not stage.get("unlocked", false):
 			enter.text = "尚未解锁"
+		for kind in ["prelude", "resolution"]:
+			var scene := scene_for(str(stage.stage_id), kind)
+			if not scene.is_empty():
+				var caption := ("回看 · " if scene.get("completed", false) else "") + ("战前" if kind == "prelude" else "战后")
+				var scene_button: Button = ui.button(actions, caption, play_scene.bind(scene, not scene.get("completed", false)))
+				scene_button.disabled = busy or is_instance_valid(scene_player) or not scene.get("replayable", false)
 		ui.line(content)
 	ui.paragraph(content, "穿戴装备、强化和流派套装均在入场时生效。避开红色预警，抓住收招时机。失败可以重试。", 17)
 	var recent: Array = current.get("recent", [])
@@ -141,7 +160,51 @@ static func reward_text(reward: Dictionary) -> String:
 		text += " · 装备"
 	return text
 
+func scene_for(stage_id: String, kind: String) -> Dictionary:
+	for scene in story_data.get("scenes", []):
+		if str(scene.get("stage_id", "")) == stage_id and str(scene.get("kind", "")) == kind:
+			return scene
+	return {}
+
+func play_scene(scene: Dictionary, save_marker: bool = true) -> void:
+	if is_instance_valid(scene_player) or scene.is_empty():
+		return
+	var player := StoryScenePlayer.new()
+	player.scene_data = scene.duplicate(true)
+	player.kernel = get_tree().root.get_node("GameKernel")
+	player.cultivator_id = cultivator_id
+	player.variants = story_data.get("variants", {})
+	player.persist_marker = save_marker and not scene.get("completed", false)
+	scene_player = player
+	StoryScenePlayer.mount(player, get_tree().root)
+	player.finished.connect(scene_finished)
+	render()
+
+func scene_finished(_scene_id: String, _skipped: bool, saved: bool) -> void:
+	scene_player = null
+	status_label.text = "场景已保存。" if saved else "场景标记未同步；可再次进入以重试。"
+	if not saved:
+		pending_stage = ""
+		refresh()
+		return
+	if not pending_stage.is_empty():
+		var stage_id := pending_stage
+		pending_stage = ""
+		start_now(stage_id)
+	else:
+		refresh()
+
 func start(stage_id: String) -> void:
+	if busy or is_instance_valid(scene_player):
+		return
+	var prelude := scene_for(stage_id, "prelude")
+	if not prelude.is_empty() and prelude.get("replayable", false) and not prelude.get("completed", false):
+		pending_stage = stage_id
+		play_scene(prelude, true)
+		return
+	start_now(stage_id)
+
+func start_now(stage_id: String) -> void:
 	if busy:
 		return
 	busy = true
@@ -157,6 +220,10 @@ func start(stage_id: String) -> void:
 		status_label.text = result.message
 		render()
 		refresh()
+
+func story_command(kind: String, payload: Dictionary = {}) -> Dictionary:
+	var core := get_tree().root.get_node("GameKernel")
+	return await core.dispatch("story." + kind, payload.merged({"cultivator_id": cultivator_id}))
 
 func command(kind: String, payload: Dictionary = {}) -> Dictionary:
 	var core := get_tree().root.get_node("GameKernel")
