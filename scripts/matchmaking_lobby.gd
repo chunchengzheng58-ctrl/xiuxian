@@ -111,7 +111,7 @@ func render() -> void:
 	ui.label_into(content, "我的积分 %d" % int(rating.get("rating", 1000)), 26)
 	var rank := int(rating.rank) if rating.get("rank") != null else 0
 	ui.paragraph(content, "%d 胜  ·  %d 负  ·  %d 平  ·  %s" % [int(rating.get("wins", 0)), int(rating.get("losses", 0)), int(rating.get("draws", 0)), "第 %d 名" % rank if rank > 0 else "完成比赛后上榜"], 18)
-	ui.paragraph(content, "匹配双方使用相同基础数值，一局 90 秒。开战后认输或掉线超时会计入胜负；准备阶段离开和服务中断不计分。好友切磋不影响积分。", 17)
+	ui.paragraph(content, "真人匹配使用相同基础数值，每局 90 秒。AI 陪练和好友切磋不影响排位积分。", 17)
 	ui.line(content)
 	ui.label_into(content, "论剑积分榜", 23)
 	var leaders: Array = current.get("leaderboard", [])
@@ -155,7 +155,7 @@ func build_match_controls() -> void:
 		action_button = ui.button(content, "取消匹配", cancel)
 	else:
 		ui.label_into(content, "寻找与你切磋的在线同道", 24)
-		ui.paragraph(content, "无需添加好友。匹配最多等待 60 秒，等待期间可随时取消。", 17)
+		ui.paragraph(content, "优先匹配真人。15 秒未匹配到真人时，将安排 AI 陪练。", 17)
 		action_button = ui.button(content, "开始匹配", join, true)
 	if is_instance_valid(action_button):
 		action_button.disabled = busy

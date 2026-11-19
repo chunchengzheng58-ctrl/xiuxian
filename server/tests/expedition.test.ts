@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import WebSocket from 'ws';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from '../src/app.js';
 import { repositoryRoot } from '../src/contracts.js';
@@ -277,16 +277,16 @@ test('v7存档迁移最新版保留余额、流派强化装备、账号会话与
   await first.app.close();
   // Remove unused later schema to construct a v7 database with valid v1..v7 checksums.
   const raw = new DatabaseSync(path);
+  const arenaV6 = Array.from(readFileSync(join(repositoryRoot, 'server/src/database.ts'), 'utf8')
+    .matchAll(/String\.raw`([\s\S]*?)`/g), match => match[1]!)[5]!;
   raw.exec(`DROP TABLE story_nodes; DROP TABLE adventure_awards;
-    DROP INDEX arena_ranked_history; DROP TABLE arena_queue; DROP TABLE arena_ratings;
-    ALTER TABLE arena_duels DROP COLUMN mode;
-    ALTER TABLE arena_duels DROP COLUMN challenger_rating_before; ALTER TABLE arena_duels DROP COLUMN challenger_rating_after;
-    ALTER TABLE arena_duels DROP COLUMN opponent_rating_before; ALTER TABLE arena_duels DROP COLUMN opponent_rating_after;
+    DROP TABLE arena_duels; DROP TABLE arena_queue; DROP TABLE arena_ratings;
     DROP TABLE expedition_clears; DROP TABLE expedition_runs; DELETE FROM schema_migrations WHERE version >= 8; PRAGMA user_version = 7;`);
+  raw.exec(arenaV6);
   raw.close();
   const migrated = await buildApp(options);
   try {
-    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 10);
+    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 11);
     assert.equal(migrated.auth.authenticate(`Bearer ${login.token}`).account_id, account.account_id);
     assert.deepEqual(migrated.game.characterSnapshot(account.account_id, actor), before);
     assert.deepEqual(migrated.db.all('SELECT * FROM ledger ORDER BY rowid'), ledger);

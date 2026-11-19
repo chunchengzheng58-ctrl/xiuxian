@@ -56,7 +56,7 @@ test('公开匹配：无好友也能排队、重试不续期、双方进入相�
   assert.equal(initial.rating.rating,1000);
   assert.equal(initial.rating.rank,null);
   const queued=await left.send('combat.matchmaking_join',{},'join-left');
-  assert.equal(queued.queue.expires_at,app.now()+60);
+  assert.equal(queued.queue.expires_at,app.now()+15);
   assert.equal(app.game.snapshot(left.account_id).duel.queued,true);
   app.advance(2);
   const retry=await left.send('combat.matchmaking_join');
@@ -108,10 +108,13 @@ test('公开匹配：缺名片与角色归属拒绝，排队阻止PVE/好友约�
   const expedition=await left.send('combat.expedition_start',{stage_id:'b01'});
   assert.equal((await left.request('combat.matchmaking_join')).body.code,'EXPEDITION_ACTIVE');
   await left.send('combat.expedition_leave',{run_id:expedition.run_id});
-  await left.send('combat.matchmaking_join');app.advance(60);app.game.arena.step(1);
-  assert.equal((await left.send('combat.matchmaking_lobby')).queue,null);
-  assert.equal(app.game.snapshot(left.account_id).duel.queued,false);
   await left.send('combat.matchmaking_join');
+  app.advance(14);app.game.arena.step(1);
+  assert.equal((await left.send('combat.matchmaking_lobby')).active,null);
+  await left.send('combat.matchmaking_cancel');
+  app.advance(1);app.game.arena.step(1);
+  assert.equal((await left.send('combat.matchmaking_lobby')).active,null);
+  assert.equal(app.game.snapshot(left.account_id).duel.queued,false);
   const elder=await app.command(right.token,'growth.create_member',{role:'elder',name:'家人',profile:{title:'家人',avatar:'male',relation:'父亲',age:70,sex:'男',mode:'family',consent:true},request_id:secret()});
   assert.equal((await right.request('combat.matchmaking_join',{cultivator_id:elder.cultivator_id})).body.code,'DUEL_SELF_REQUIRED');
 });
@@ -175,14 +178,49 @@ test('公开匹配：排队会话失效/生命周期变化清除，积分差距�
   app.db.run('UPDATE arena_ratings SET rating=2000 WHERE cultivator_id=?',left.id);
   await sendLeft('combat.matchmaking_join');await right.send('combat.matchmaking_join');
   assert.equal((await sendLeft('combat.matchmaking_lobby')).active,null);
-  app.advance(30);app.game.arena.step(1);
+  app.advance(15);app.game.arena.step(1);
   const matched=await sendLeft('combat.matchmaking_lobby');assert(matched.active);
   await app.command(left.token,'combat.duel_leave',{cultivator_id:left.id,match_id:matched.active.match_id},secret());
   // Public matching also respects an existing social block without exposing its reason.
   app.db.run('INSERT INTO social_blocks VALUES (?,?)',left.id,right.id);
   app.db.run('UPDATE arena_ratings SET rating=1000 WHERE cultivator_id=?',left.id);
   await sendLeft('combat.matchmaking_join');await right.send('combat.matchmaking_join');
-  app.advance(31);app.game.arena.step(1);
-  assert.equal((await sendLeft('combat.matchmaking_lobby')).active,null);
-  assert.equal((await right.send('combat.matchmaking_lobby')).active,null);
+  app.advance(15);app.game.arena.step(1);
+  const leftBot=(await sendLeft('combat.matchmaking_lobby')).active;
+  const rightBot=(await right.send('combat.matchmaking_lobby')).active;
+  assert.equal(leftBot.bot,true);
+  assert.equal(rightBot.bot,true);
+  assert.notEqual(leftBot.match_id,rightBot.match_id);
+});
+
+
+test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', async context => {
+  const { app, left, right } = await players(context);
+  const before = (await left.send('combat.matchmaking_lobby')).rating;
+  await left.send('combat.matchmaking_join');
+  app.advance(14);
+  app.game.arena.step(1);
+  assert.equal((await left.send('combat.matchmaking_lobby')).active, null);
+  app.advance(1);
+  app.game.arena.step(1);
+  const { active, queue } = await left.send('combat.matchmaking_lobby');
+  assert.equal(queue, null);
+  assert.equal(active.bot, true);
+  assert.match(active.opponent, /AI陪练/);
+  assert.throws(() => app.game.arena.subscribe(right.account_id, active.match_id), /对战不存在/);
+
+  const subscription = app.game.arena.subscribe(left.account_id, active.match_id);
+  app.game.arena.connect(subscription, true);
+  app.game.arena.step(52);
+  const opened = app.game.arena.state(subscription)!;
+  assert.equal(opened.phase, 'fighting');
+  assert.equal(opened.players[1]?.max_hp, 86);
+  assert.equal(opened.names[1], active.opponent);
+  app.game.arena.step(850);
+  const finished = app.game.arena.state(subscription)!;
+  assert.equal(finished.result?.reason, 'knockout');
+  assert.equal(finished.rating_change, null);
+  const lobby = await left.send('combat.matchmaking_lobby');
+  assert.deepEqual(lobby.rating, before);
+  assert.deepEqual(lobby.leaderboard, []);
 });

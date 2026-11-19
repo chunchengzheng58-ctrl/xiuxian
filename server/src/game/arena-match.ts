@@ -23,7 +23,7 @@ const opposite = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 export type FighterStats = { life: number; spirit: number; stamina: number; attack: number; defense: number };
-type ArenaOptions = { stats?: [FighterStats, FighterStats]; fightSeconds?: number; reconnectSeconds?: number };
+type ArenaOptions = { stats?: [FighterStats, FighterStats]; fightSeconds?: number; reconnectSeconds?: number; bot?: boolean };
 function fighter(x: number, facing: number, stats: FighterStats = { life: 100, spirit: 100, stamina: 100, attack: 12, defense: 0 }): Fighter {
   return {
     x, y: 570, fx: facing, fy: 0, hp: stats.life, mp: stats.spirit, stamina: stats.stamina,
@@ -43,9 +43,17 @@ export class ArenaMatch {
   private countdown = readyTicks;
   private remaining = fightTicks;
   private reconnect = reconnectTicks;
+  private readonly bot: boolean;
+  private botNextMove = 0;
+  private botNextAttack = 0;
 
   constructor(private waiting: number, options: ArenaOptions = {}) {
     this.fighters = [fighter(520, 1, options.stats?.[0]), fighter(920, -1, options.stats?.[1])];
+    this.bot = options.bot ?? false;
+    if (this.bot) {
+      this.fighters[1] = fighter(920, -1, { life: 86, spirit: 100, stamina: 100, attack: 8, defense: 0 });
+      this.fighters[1].online = true;
+    }
     this.remaining = (options.fightSeconds ?? 90) * 1000 / arenaTickMs;
     this.reconnect = (options.reconnectSeconds ?? 10) * 1000 / arenaTickMs;
   }
@@ -79,7 +87,11 @@ export class ArenaMatch {
       this.phase = both ? 'countdown' : 'waiting';
       if (--this.waiting <= 0) { this.finish(null, 'absent'); return; }
       if (!both) this.countdown = readyTicks;
-      else if (--this.countdown === 0) this.phase = 'fighting';
+      else if (--this.countdown === 0) {
+        this.phase = 'fighting';
+        this.botNextMove = this.tick + 20;
+        this.botNextAttack = this.tick + 32;
+      }
       return;
     }
     if (!both) {
@@ -91,6 +103,7 @@ export class ArenaMatch {
       return;
     }
     this.phase = 'fighting';
+    if (this.bot) this.driveBot();
     for (const player of this.fighters) this.move(player);
     this.separate();
     const damage: [number, number] = [0, 0];
@@ -99,6 +112,25 @@ export class ArenaMatch {
     for (const seat of seats) this.applyDamage(this.fighters[seat], damage[seat]);
     if (this.fighters.some(player => player.hp === 0)) this.finish(this.leading(), 'knockout');
     else if (--this.remaining === 0) this.finish(this.leading(), 'time');
+  }
+
+  private driveBot() {
+    if (this.tick < this.botNextMove) return;
+    this.botNextMove = this.tick + 6;
+    const [player, bot] = this.fighters;
+    const dx = player.x - bot.x;
+    const dy = player.y - bot.y;
+    const distance = Math.hypot(dx, dy);
+    const speed = distance > 104 ? 0.57 : 0.12;
+    let action = 0;
+    if (this.tick >= this.botNextAttack && distance <= 112 && bot.cd[1] === 0) {
+      action = 1;
+      this.botNextAttack = this.tick + 34;
+    }
+    this.input(1, {
+      seq: bot.seq + 1, x: dx / Math.max(distance, 1) * speed,
+      y: dy / Math.max(distance, 1) * speed, action,
+    });
   }
 
   finish(winner: Seat | null, reason: string): ArenaResult {
