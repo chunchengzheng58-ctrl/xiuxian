@@ -18,6 +18,21 @@
     #status { position: absolute; inset: 0; display: grid; place-content: center;
       gap: 12px; padding: 24px; text-align: center; background: #10151f; }
     #status[hidden] { display: none; }
+    #status { background: #10151f url('loading/title.png') center / cover no-repeat; }
+    #opening-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #opening-video[hidden] { display: none; }
+    .loading-ui { position: absolute; bottom: max(65px, 9vh); left: 50%; transform: translateX(-50%);
+      display: grid; gap: 12px; width: min(80vw, 520px); text-shadow: 0 2px 4px #000; }
+    .runner-track { height: 84px; position: relative; }
+    .runner-travel { position: absolute; width: 72px; height: 84px; animation: travel 4s linear infinite alternate; }
+    .runner { width: 72px; height: 84px; background: url('loading/runner.png') 0 66.6667% / 400% 400%;
+      image-rendering: pixelated; animation: run .45s steps(4) infinite; }
+    @keyframes run { to { background-position-x: 133.3333%; } }
+    @keyframes travel { from { left: 0; } to { left: calc(100% - 72px); } }
+    #skip-opening { position: absolute; right: 20px; top: 20px; padding: 10px 16px;
+      color: #fff3d6; background: #24202cbb; border: 1px solid #dbab62; cursor: pointer; }
+    #skip-opening[hidden] { display: none; }
+    @media (prefers-reduced-motion: reduce) { .runner-travel { animation: none; left: calc(50% - 36px); } }
     progress { width: min(65vw, 420px); accent-color: #dbab62; justify-self: center; }
     #rotate { display: none; pointer-events: none; position: absolute;
       top: max(12px, env(safe-area-inset-top)); padding: 9px 14px; border-radius: 20px;
@@ -72,10 +87,29 @@ window.xiuxianPickPtdsSummary = (receive) => {
     <canvas id="canvas" width="1440" height="900">此浏览器无法显示游戏画面。</canvas>
     <span id="rotate">横屏游玩，按键更好操作</span>
     <div id="status" role="status">
+      <video id="opening-video" muted autoplay playsinline preload="auto" poster="loading/title.png" src="loading/opening.mp4" aria-label="疯狂修仙开场动画"></video>
+      <button id="skip-opening" type="button">跳过开场</button>
+      <div class="loading-ui">
+      <div class="runner-track" aria-hidden="true"><div class="runner-travel"><div class="runner"></div></div></div>
       <span id="status-text">正在载入仙村…</span>
       <progress id="progress" aria-label="加载进度"></progress>
+      </div>
     </div>
   </main>
+  <script>
+    // Start the opening before downloading the engine and game package.
+    const openingVideo = document.getElementById("opening-video");
+    const skipOpening = document.getElementById("skip-opening");
+    function finishOpening() {
+      openingVideo.pause();
+      openingVideo.hidden = true;
+      skipOpening.hidden = true;
+    }
+    openingVideo.addEventListener("ended", finishOpening);
+    openingVideo.addEventListener("error", finishOpening);
+    skipOpening.addEventListener("click", finishOpening);
+    openingVideo.play().catch(finishOpening);
+  </script>
   <noscript>请启用 JavaScript 后重新打开游戏。</noscript>
   <script src="$GODOT_URL"></script>
   <script>
@@ -147,7 +181,7 @@ window.xiuxianPickPtdsSummary = (receive) => {
             progress.value = current;
           }
         },
-      }).then(() => { status.hidden = true; }, showError);
+      }).then(() => { finishOpening(); status.hidden = true; }, showError);
     }
   </script>
 </body>
