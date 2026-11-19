@@ -19,20 +19,30 @@
       gap: 12px; padding: 24px; text-align: center; background: #10151f; }
     #status[hidden] { display: none; }
     #status { background: #10151f url('loading/title.png') center / cover no-repeat; }
-    #opening-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    #opening-video[hidden] { display: none; }
+    #status { isolation: isolate; }
+    #status::after { content: ''; position: absolute; inset: 0; z-index: -1;
+      background: linear-gradient(transparent 55%, #10151ff2); }
+    .spirit-array { position: absolute; width: min(28vw, 240px); aspect-ratio: 1;
+      top: 10%; left: 50%; transform: translateX(-50%); --charge: 0;
+      color: #f3cb78; filter: drop-shadow(0 0 14px #eab65c); opacity: calc(.45 + var(--charge) * .55); }
+    .spirit-array i { position: absolute; inset: 0; border: 2px dashed #eac679;
+      border-radius: 50%; animation: orbit 28s linear infinite; }
+    .spirit-array i:nth-child(2) { inset: 16%; border-style: dotted; animation-direction: reverse; animation-duration: 18s; }
+    .spirit-array i:nth-child(3) { inset: 30%; border-style: solid; animation: breathe 3s ease-in-out infinite; }
+    .spirit-array b { position: absolute; inset: 0; display: grid; place-items: center;
+      font-size: 40px; animation: breathe 3s ease-in-out infinite; }
+    @keyframes orbit { to { transform: rotate(360deg); } }
+    @keyframes breathe { 50% { opacity: .4; transform: scale(.94); } }
     .loading-ui { position: absolute; bottom: max(65px, 9vh); left: 50%; transform: translateX(-50%);
       display: grid; gap: 12px; width: min(80vw, 520px); text-shadow: 0 2px 4px #000; }
-    .runner-track { height: 84px; position: relative; }
-    .runner-travel { position: absolute; width: 72px; height: 84px; animation: travel 4s linear infinite alternate; }
-    .runner { width: 72px; height: 84px; background: url('loading/runner.png') 0 66.6667% / 400% 400%;
-      image-rendering: pixelated; animation: run .45s steps(4) infinite; }
-    @keyframes run { to { background-position-x: 133.3333%; } }
-    @keyframes travel { from { left: 0; } to { left: calc(100% - 72px); } }
-    #skip-opening { position: absolute; right: 20px; top: 20px; padding: 10px 16px;
-      color: #fff3d6; background: #24202cbb; border: 1px solid #dbab62; cursor: pointer; }
-    #skip-opening[hidden] { display: none; }
-    @media (prefers-reduced-motion: reduce) { .runner-travel { animation: none; left: calc(50% - 36px); } }
+    .loading-ui { bottom: max(32px, 5vh); width: min(82vw, 600px); gap: 10px;
+      padding: 20px 24px; box-sizing: border-box; border: 1px solid #d4a85566;
+      border-radius: 14px; background: #10151fdd; box-shadow: 0 8px 40px #0005; }
+    #transfer-details { font-size: 14px; font-variant-numeric: tabular-nums; color: #edcf99; }
+    #cache-details { font-size: 12px; color: #bdafa0; }
+    .loading-ui progress { width: 100%; height: 12px; }
+    @media (prefers-reduced-motion: reduce) { .spirit-array * { animation: none !important; } }
+    @media (max-height: 500px) { .loading-ui { bottom: 25px; padding: 10px; gap: 5px; } .spirit-array { top: 4%; width: 100px; } }
     progress { width: min(65vw, 420px); accent-color: #dbab62; justify-self: center; }
     #rotate { display: none; pointer-events: none; position: absolute;
       top: max(12px, env(safe-area-inset-top)); padding: 9px 14px; border-radius: 20px;
@@ -87,28 +97,18 @@ window.xiuxianPickPtdsSummary = (receive) => {
     <canvas id="canvas" width="1440" height="900">此浏览器无法显示游戏画面。</canvas>
     <span id="rotate">横屏游玩，按键更好操作</span>
     <div id="status" role="status">
-      <video id="opening-video" muted autoplay playsinline preload="auto" poster="loading/title.png" src="loading/opening.mp4" aria-label="疯狂修仙开场动画"></video>
-      <button id="skip-opening" type="button">跳过开场</button>
+      <div class="spirit-array" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></div>
       <div class="loading-ui">
-      <div class="runner-track" aria-hidden="true"><div class="runner-travel"><div class="runner"></div></div></div>
       <span id="status-text">正在载入仙村…</span>
       <progress id="progress" aria-label="加载进度"></progress>
+      <span id="transfer-details">正在准备资源…</span>
+      <span id="cache-details">首次进入需下载资源，完成后自动缓存到此设备</span>
       </div>
     </div>
   </main>
   <script>
     // Start the opening before downloading the engine and game package.
-    const openingVideo = document.getElementById("opening-video");
-    const skipOpening = document.getElementById("skip-opening");
-    function finishOpening() {
-      openingVideo.pause();
-      openingVideo.hidden = true;
-      skipOpening.hidden = true;
-    }
-    openingVideo.addEventListener("ended", finishOpening);
-    openingVideo.addEventListener("error", finishOpening);
-    skipOpening.addEventListener("click", finishOpening);
-    openingVideo.play().catch(finishOpening);
+    function finishOpening() {}
   </script>
   <noscript>请启用 JavaScript 后重新打开游戏。</noscript>
   <script src="$GODOT_URL"></script>
@@ -118,6 +118,28 @@ window.xiuxianPickPtdsSummary = (receive) => {
     const canvas = document.getElementById("canvas");
     const status = document.getElementById("status");
     const progress = document.getElementById("progress");
+    const transferDetails = document.getElementById("transfer-details");
+    const cacheDetails = document.getElementById("cache-details");
+    let cachedBytes = 0;
+    let lastBytes = 0, lastSample = performance.now(), rate = 0;
+    const mb = n => (n / 1048576).toFixed(1) + " MB";
+    navigator.serviceWorker?.addEventListener("message", event => {
+      if (event.data?.type === "resource-cache-hit") {
+        cachedBytes += event.data.bytes || 0;
+        cacheDetails.textContent = "正在读取此设备已缓存的资源";
+      }
+      if (event.data?.type === "resource-cache-unavailable") cacheDetails.textContent = "此浏览器未能保存缓存，下次可能需要重新下载";
+    });
+    async function prepareCache() {
+      if (!('serviceWorker' in navigator)) { cacheDetails.textContent = "当前浏览器使用普通资源缓存"; return; }
+      try {
+        await navigator.serviceWorker.register('/game-cache-sw.js', {scope: '/'});
+        await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(r, 2500))]);
+        if (!navigator.serviceWorker.controller) await Promise.race([
+          new Promise(r => navigator.serviceWorker.addEventListener('controllerchange', r, {once:true})),
+          new Promise(r => setTimeout(r, 1500))]);
+      } catch { cacheDetails.textContent = "当前浏览器使用普通资源缓存"; }
+    }
     let fittedWidth = 0;
     let fittedHeight = 0;
     let editing = false;
@@ -173,15 +195,26 @@ window.xiuxianPickPtdsSummary = (receive) => {
     if (missing.length) {
       showError(missing.join("、"));
     } else {
-      engine.startGame({
+      prepareCache().then(() => engine.startGame({
         canvas,
         onProgress(current, total) {
           if (total > 0) {
             progress.max = total;
             progress.value = current;
+            const ratio = Math.min(1, current / total);
+            document.querySelector('.spirit-array').style.setProperty('--charge', ratio);
+            document.getElementById("status-text").textContent = current >= total
+              ? "资源已就绪 · 正在初始化仙村…" : "正在准备仙村 · " + Math.floor(ratio * 100) + "%";
           }
+          const now = performance.now();
+          if (now - lastSample >= 500) {
+            rate = Math.max(0, current - cachedBytes - lastBytes) / ((now - lastSample) / 1000);
+            lastBytes = Math.max(0, current - cachedBytes); lastSample = now;
+          }
+          transferDetails.textContent = mb(current) + (total > 0 ? " / " + mb(total) : "")
+            + (current >= total && total > 0 ? " ｜ 资源准备完成" : cachedBytes >= current && cachedBytes > 0 ? " ｜ 从本地缓存读取" : " ｜ " + mb(rate) + "/s");
         },
-      }).then(() => { finishOpening(); status.hidden = true; }, showError);
+      })).then(() => { finishOpening(); status.hidden = true; }, showError);
     }
   </script>
 </body>
