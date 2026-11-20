@@ -248,5 +248,48 @@ window.xiuxianPickPtdsSummary = (receive) => {
       })).then(() => { finishOpening(); status.hidden = true; }, showError);
     }
   </script>
+  <!-- site-notice-start -->
+  <style>
+    .site-footer { position:fixed; inset:auto 0 0; z-index:20; display:flex; align-items:center;
+      justify-content:center; gap:14px; background:#10151f; padding:3px 8px; font-size:12px; }
+    .site-footer a { color:#ddd0ba; }
+    .site-footer button, #site-notice button { color:#fff3d6; border:1px solid #ab8558;
+      border-radius:5px; background:#30271f; padding:4px 10px; cursor:pointer; }
+    #site-notice { box-sizing:border-box; width:min(520px, calc(100% - 28px)); max-height:85dvh;
+      overflow:auto; color:#fff3d6; background:#171e2b; border:1px solid #ab8558;
+      border-radius:14px; padding:clamp(16px, 5vw, 28px); }
+    #site-notice::backdrop { background:#080c13bb; }
+    #site-notice h2, #site-notice h3 { margin:0; }
+    #site-notice section { border-top:1px solid #ab855866; margin-top:16px; padding-top:16px; }
+    #site-notice p { color:#ddd0ba; line-height:1.55; }
+    #site-notice header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .client-download { display:inline-block; background:#edc980; color:#241a12; border-radius:6px;
+      padding:9px 14px; font-weight:600; text-decoration:none; }
+  </style>
+  <footer class="site-footer">
+    <button id="open-site-notice" type="button">公告与下载</button>
+    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">赣ICP备2026021313号-3</a>
+  </footer>
+  <dialog id="site-notice" aria-labelledby="site-notice-title">
+    <header>
+      <h2 id="site-notice-title">公告与下载</h2>
+      <form method="dialog"><button autofocus>关闭</button></form>
+    </header>
+    <section aria-labelledby="site-updates">
+      <h3 id="site-updates">版本公告</h3>
+      <p>网页版已更新《按时吃饭》主线，包含九章二十关和新版 Boss 剧情。首次进入需要下载资源，同一浏览器再次进入时会优先使用缓存。</p>
+    </section>
+    <section aria-labelledby="site-downloads">
+      <h3 id="site-downloads">电脑客户端下载</h3>
+      <p>现有 Windows 64 位客户端为较早的 PTDS 版本。体验最新主线请使用网页版。</p>
+      <a class="client-download" href="/downloads/xiuxian-full-ptds-ebb291d-windows-x64.zip" download>下载 Windows 64 位版</a>
+    </section>
+  </dialog>
+  <script>
+    document.getElementById("open-site-notice").addEventListener("click", () => {
+      document.getElementById("site-notice").showModal();
+    });
+  </script>
+  <!-- site-notice-end -->
 </body>
 </html>
