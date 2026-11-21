@@ -410,6 +410,8 @@ func travel_to(id: String) -> void:
 
 func _process(delta: float) -> void:
 	elapsed += delta
+	if account_ready and state.is_remote() and get_window().has_focus():
+		account_api.record_play_day()
 	for i in range(npc_sprites.size()):
 		npc_sprites[i].position.y = -41.5 - sin(elapsed * 1.5 + i * 2) * 0.8
 	update_nearest()

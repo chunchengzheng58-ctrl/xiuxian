@@ -6,7 +6,7 @@ import websocket from '@fastify/websocket';
 import { randomInt, timingSafeEqual } from 'node:crypto';
 import { Database } from './database.js';
 import { AuthService } from './auth.js';
-import { type Clock, DomainError, canonical, digest, requireCondition, secret, success } from './core.js';
+import { type Clock, DomainError, canonical, dayKey, digest, requireCondition, secret, success } from './core.js';
 import { contract, commands, validateCommand, stringField, boolField, positiveInteger, enumField, objectSchema, resultSchema } from './contracts.js';
 import { GameService, type GameExtensions, type Season } from './game/service.js';
 import { type RuleProviders, defaultProviders } from './game/rules.js';
@@ -84,6 +84,13 @@ export async function buildApp(options: AppOptions = {}) {
     return success(await game.execute(current.account_id, input.command, input.payload, request.headers['idempotency-key'] as string | undefined));
   });
   app.get('/api/v2/snapshot', { schema: routeSchema('game', '当前账号的权威游戏快照') }, async request => success(game.snapshot(session(request).account_id)));
+  app.post('/api/v2/play-days', { schema: routeSchema('game', '记录当前账号的游玩日并返回总数', objectSchema({})) }, async request => {
+    const accountId = session(request).account_id;
+    return success(db.transaction(() => {
+      db.run('INSERT OR IGNORE INTO account_play_days (account_id, day) VALUES (?, ?)', accountId, dayKey(now()));
+      return db.get<{ play_days: number }>('SELECT COUNT(*) AS play_days FROM account_play_days WHERE account_id = ?', accountId)!;
+    }));
+  });
   app.post('/api/v2/realtime/ticket', { schema: routeSchema('realtime', '签发 60 秒有效的一次性连接票据', objectSchema({})) }, async request => success(realtime.ticket(session(request))));
   realtime.register(app, origins);
 
