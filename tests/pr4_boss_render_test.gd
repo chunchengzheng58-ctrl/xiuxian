@@ -25,9 +25,12 @@ func _run() -> void:
 	var actor = scene.family.state_for(member.id)
 	actor.apply_health_profile(actor.HealthProfile.mock(40,1))
 	scene.ui.activate_family(member.id)
+	scene.account_ready = true
 	var kinds: Dictionary = {}
 	var mechanic_shots: Dictionary = {}
 	for row in Catalogue.all():
+		if int(row.index) > 0 and not actor.boss_cleared(Catalogue.at(int(row.index) - 1).id):
+			actor.complete_boss(Catalogue.at(int(row.index) - 1).id, {"time": 40.0})
 		scene.ui.start_corridor_boss(row.id)
 		await process_frame
 		var view: Control = scene.ui.combat

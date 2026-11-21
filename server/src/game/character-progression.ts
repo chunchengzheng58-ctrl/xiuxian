@@ -7,16 +7,23 @@ import type { FighterStats } from './arena-match.js';
 import type { Character } from './rules.js';
 
 export type CampaignReward = { spirit_stones: number; materials: number; adventure_xp: number };
-export type CampaignNode = { id: string; title: string; kind: 'intro' | 'closure'; dialogue: { speaker: string; text: string }[] };
+export type StoryDialogue = { speaker: string; text: string; art?: string };
+export type StorySceneKind = 'prelude' | 'resolution' | 'ending';
+export type StoryScene = { scene_id: string; title: string; kind: StorySceneKind; dialogue: StoryDialogue[]; stage_id?: string; art?: string };
+export type CampaignNode = { id: string; title: string; kind: 'intro' | 'closure'; dialogue: StoryDialogue[] };
 export type CampaignChapter = { id: string; title: string; region: string; stage_ids: string[]; optional: boolean; reward: CampaignReward; nodes: CampaignNode[] };
 export type CampaignStage = {
   stage_id: string; boss_id: string; name: string; subtitle: string; region: string; chapter_id: string; optional: boolean;
   recommendation: string; story: string; tactics: string; world_change: string;
+  prelude: StoryDialogue[]; resolution: StoryDialogue[];
+  entrance: { style: string; line: string; motion: string };
+  barks: { entry?: string; phase?: string; low_hp?: string; defeat?: string };
   requires: { all_clears: string[]; any_clears: string[] };
   school: number; template: number; rarity: number; first_reward: CampaignReward; repeat_reward: CampaignReward;
   battle: { life: number; attack: number };
 };
 type Campaign = { version: string; title: string; core_stages: string[]; chapters: CampaignChapter[]; stages: CampaignStage[];
+  ending_scene: StoryScene;
   progression: { thresholds: number[]; base: FighterStats; per_level: FighterStats; titles: { level: number; title: string }[] } };
 export const campaignConfig = JSON.parse(readFileSync(join(repositoryRoot, 'data/adventure-campaign.v1.json'), 'utf8')) as Campaign;
 const thresholds = campaignConfig.progression.thresholds;

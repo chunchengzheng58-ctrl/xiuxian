@@ -17,6 +17,8 @@ var frame_clock: float = 0
 var facing: int = 2
 var nearest_index: int = 0
 var portal_buttons: Array[Button] = []
+var preview_sprites: Array[Sprite2D] = []
+var portal_landscapes: Array[TextureRect] = []
 var status_labels: Array[Label] = []
 var jump_buttons: Array[Button] = []
 var progress_label: Label
@@ -99,6 +101,7 @@ func _build_gate(entry: Dictionary) -> void:
 	landscape.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	landscape.clip_contents = true
 	portal_window.add_child(landscape)
+	portal_landscapes.append(landscape)
 	var top = Panel.new()
 	top.position = Vector2(center - 179, 198)
 	top.size = Vector2(358, 61)
@@ -116,6 +119,7 @@ func _build_gate(entry: Dictionary) -> void:
 	body.offset.y = -body.texture.get_height() * 0.5
 	body.scale = Vector2.ONE * float(entry.get("preview_height", 226)) / body.texture.get_height()
 	world.add_child(body)
+	preview_sprites.append(body)
 	var enter = Button.new()
 	enter.position = Vector2(center - 165, 263)
 	enter.size = Vector2(330, 334)
@@ -128,6 +132,7 @@ func _build_gate(entry: Dictionary) -> void:
 	hover.set_border_width_all(5)
 	hover.bg_color = Color(1, 0.92, 0.7, 0.08)
 	enter.add_theme_stylebox_override("normal", transparent)
+	enter.add_theme_stylebox_override("disabled", transparent)
 	enter.add_theme_stylebox_override("hover", hover)
 	enter.add_theme_stylebox_override("pressed", hover)
 	var id: String = entry.id
@@ -190,7 +195,7 @@ func _build_hud() -> void:
 	var footer = ui.card(Rect2(20, 797, 1400, 87), self, Color("342922"))
 	footer.add_theme_constant_override("separation", 5)
 	focus_label = ui.label_into(footer, "", 17, Color("ffe4ae"))
-	ui.label_into(footer, "A / D 行走  ·  W / S 调整站位  ·  Shift 加速  ·  E 进入最近的门  ·  滚轮浏览长廊  ·  点击 Boss 直接开战", 15, Color("d7c5a8"))
+	ui.label_into(footer, "A / D 行走  ·  W / S 调整站位  ·  Shift 加速  ·  E 进入最近的门  ·  滚轮浏览长廊  ·  点击已解锁 Boss 开战", 15, Color("d7c5a8"))
 	var numbers = HBoxContainer.new()
 	numbers.position = Vector2(175, 739)
 	numbers.add_theme_constant_override("separation", 7)
@@ -211,12 +216,29 @@ func _build_hud() -> void:
 
 func refresh() -> void:
 	for entry in Catalogue.all():
-		var cleared = game.state.boss_cleared(entry.id)
-		status_labels[int(entry.index)].text = ("✓ 已通关" if cleared else "尚未挑战") + "  ·  建议 %d 档" % entry.tier
+		var index := int(entry.index)
+		var cleared: bool = game.state.boss_cleared(entry.id)
+		var unlocked: bool = game.state.boss_unlocked(entry.id)
+		if cleared:
+			status_labels[index].text = "✓ 已通关 · 可重玩"
+		elif unlocked:
+			status_labels[index].text = "已解锁 · 尚未挑战"
+		else:
+			status_labels[index].text = "未解锁 · 先通第 %02d 关" % index
+		status_labels[index].text += "  ·  建议 %d 档" % entry.tier
 		var best: Dictionary = game.state.best_boss_record(entry.id)
-		if not best.is_empty(): status_labels[int(entry.index)].text += " · 最快 %.1f秒" % float(best.time)
-		jump_buttons[int(entry.index)].text = "%02d" % (entry.index + 1)
-	progress_label.text = "%s  ·  %s  ·  首通 %d / 20  ·  关卡依次增强 · 每扇门通往独立战场" % [game.state.player_name, game.state.realm(), game.state.cleared_bosses.size()]
+		if not best.is_empty():
+			status_labels[index].text += " · 最快 %.1f秒" % float(best.time)
+		portal_buttons[index].disabled = not unlocked
+		portal_buttons[index].mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if unlocked else Control.CURSOR_ARROW
+		if unlocked:
+			portal_buttons[index].tooltip_text = _display_name(entry) + " · " + entry.arena + "\n点击进入战斗，建议培养 " + str(entry.tier) + " 档"
+		else:
+			portal_buttons[index].tooltip_text = game.state.boss_lock_message(entry.id)
+		preview_sprites[index].modulate = Color.WHITE if unlocked else Color(.42, .43, .46, .72)
+		portal_landscapes[index].modulate = Color(.7, .7, .7) if unlocked else Color(.30, .32, .34)
+		jump_buttons[index].text = "%02d" % (index + 1)
+	progress_label.text = "%s  ·  %s  ·  已开放 %d / 20  ·  首通 %d / 20  ·  通关前一关解锁下一关" % [game.state.player_name, game.state.realm(), game.state.unlocked_boss_count(), game.state.cleared_bosses.size()]
 
 func focus_boss(index: int) -> void:
 	var selected = clampi(index, 0, 19)
@@ -227,12 +249,15 @@ func focus_boss(index: int) -> void:
 
 func focus_next_boss() -> void:
 	for row in Catalogue.all():
-		if not game.state.boss_cleared(row.id):
+		if game.state.boss_unlocked(row.id) and not game.state.boss_cleared(row.id):
 			focus_boss(row.index)
 			return
 	focus_boss(19)
 
 func enter_boss(id: String) -> void:
+	if not game.state.boss_unlocked(id):
+		ui.toast(game.state.boss_lock_message(id))
+		return
 	ui.start_corridor_boss(id)
 
 func _update_camera() -> void:
@@ -242,7 +267,15 @@ func _update_camera() -> void:
 	player_shadow.position = player_position
 	nearest_index = clampi(roundi((player_position.x - FIRST_GATE) / GATE_SPACING), 0, 19)
 	var entry = Catalogue.at(nearest_index)
-	focus_label.text = "附近：%02d · %s  /  %s    %s" % [nearest_index + 1, _display_name(entry), entry.arena, "按 E 进入" if absf(player_position.x - gate_x(nearest_index)) < 220 else "继续沿长廊前行"]
+	var unlocked: bool = game.state.boss_unlocked(entry.id)
+	var prompt := ""
+	if not unlocked:
+		prompt = "未解锁 · 先通关第 %02d 关" % nearest_index
+	elif absf(player_position.x - gate_x(nearest_index)) < 220:
+		prompt = "按 E 进入"
+	else:
+		prompt = "继续沿长廊前行"
+	focus_label.text = "附近：%02d · %s  /  %s    %s" % [nearest_index + 1, _display_name(entry), entry.arena, prompt]
 	var story := str(entry.get("story", ""))
 	story_label.visible = not story.is_empty()
 	if story_label.visible:

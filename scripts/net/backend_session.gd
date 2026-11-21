@@ -1,6 +1,6 @@
 extends Node
 ## 账号控制器：B 的登录/注册界面接 C 的统一账号。接口与原 account_client 相同，界面不变。
-## 会话令牌只在内存中；注册成功后自动登录，并在 C 建立“本人”角色（昵称、形象）。
+## 用户勾选保持登录时保存此设备会话令牌；不保存密码，恢复时重新向服务端校验。
 ## 业务读写通过 GameKernel → 各模块 → GameApi；这里只管身份、实时连接与家族投影同步。
 signal completed(action: String, response: Dictionary)
 signal progress(message: String)
@@ -31,6 +31,31 @@ var busy = false
 var allow_autostart = true
 var started_server_pid = -1
 var tried_start = false
+var remember_login := false
+const LOGIN_PREFS := "user://login-preferences.cfg"
+
+func login_preferences() -> Dictionary:
+	if OS.has_feature("web"):
+		var raw = JavaScriptBridge.eval("(()=>{try{return localStorage.getItem('xiuxian.login.v1')||'{}'}catch(e){return '{}'}})()")
+		var parsed = JSON.parse_string(str(raw))
+		return parsed if parsed is Dictionary else {}
+	var prefs := ConfigFile.new()
+	return prefs.get_value("login", "saved", {}) if prefs.load(LOGIN_PREFS) == OK else {}
+
+func save_login_preferences(username: String, saved_token: String = "") -> void:
+	var saved := {"username": username if remember_login else "", "token": saved_token if remember_login else "", "origin": service_url, "remember": remember_login}
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("(()=>{try{localStorage.setItem('xiuxian.login.v1'," + JSON.stringify(JSON.stringify(saved)) + ");return true}catch(e){return false}})()")
+	else:
+		var prefs := ConfigFile.new()
+		prefs.set_value("login", "saved", saved)
+		prefs.save(LOGIN_PREFS)
+
+func resume_saved_login() -> void:
+	var saved := login_preferences()
+	if not busy and saved.get("remember", false) and saved.get("origin", "") == service_url and not str(saved.get("token", "")).is_empty():
+		remember_login = true
+		authenticate("login", {"username": str(saved.get("username", "")), "resume_token": str(saved.token)})
 var token: String:
 	get:
 		return api.bearer_token if is_instance_valid(api) else ""
@@ -113,10 +138,19 @@ func authenticate(action: String, payload: Dictionary) -> void:
 			_finish(action, _failure(registered))
 			return
 	progress.emit("正在登录…")
-	var logged_in = await _with_autostart(func(): return await api.login(username, password))
+	remember_login = bool(payload.get("remember", remember_login))
+	var logged_in: Dictionary
+	if payload.has("resume_token"):
+		api.bearer_token = str(payload.resume_token)
+		logged_in = await api.request_api("/api/v2/auth/me")
+	else:
+		logged_in = await _with_autostart(func(): return await api.login(username, password))
 	if own != generation:
 		return
 	if not logged_in.ok:
+		if logged_in.get("code", "") == "UNAUTHORIZED":
+			save_login_preferences(username)
+			api.bearer_token = ""
 		_finish(action, _failure(logged_in))
 		return
 	var identity = {"id": str(logged_in.data.account_id), "username": str(logged_in.data.username), "display_name": str(payload.get("display_name", "")), "avatar": "female" if payload.get("avatar", "male") == "female" else "male"}
@@ -146,6 +180,7 @@ func authenticate(action: String, payload: Dictionary) -> void:
 	identity.display_name = str(own_role.get("name", identity.username))
 	identity.avatar = str(own_role.get("profile", {}).get("avatar", "male"))
 	account = identity
+	save_login_preferences(username, api.bearer_token)
 	realtime.connect_stream(api)
 	_finish(action, {"ok": true, "account": account.duplicate(true)})
 
@@ -163,6 +198,7 @@ func claim_legacy(fingerprint: String) -> void:
 func logout() -> void:
 	if busy:
 		return
+	save_login_preferences(str(account.get("username", "")))
 	_begin(false)
 	var own = generation
 	progress.emit("正在退出账号…")

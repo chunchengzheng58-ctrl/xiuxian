@@ -178,6 +178,7 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	scene.state = fresh()
+	scene.account_ready = true
 	scene.ui.refresh()
 	scene.ui.open_home()
 	check(find_button(scene.ui.modal, "导入已评估档案") != null, "Pixel profile exposes the external assessment import")

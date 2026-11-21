@@ -6,6 +6,9 @@ const Catalogue = preload("res://scripts/trial_catalogue.gd")
 const Equipment = preload("res://scripts/equipment_rules.gd")
 const Adventure = preload("res://scripts/adventure_catalogue.gd")
 const Feedback = preload("res://scripts/battle_feedback.gd")
+const StoryScenePlayer = preload("res://scripts/story_scene_player.gd")
+const StoryProp = preload("res://scripts/story_prop.gd")
+const STORY_BOSSES = ["b00", "b03", "b12", "b15", "b19"]
 const ACTION_NAMES = ["普攻 [J]", "听风剑诀 [1]", "踏云步 [2]", "云罡护体 [3]", "饕餮归元 [4]"]
 const TOUCH_ORDER = [1, 2, 4, 3, 5]
 const END_REASONS = {"knockout": "本场战斗结束", "time": "探索时间已到", "disconnect": "连接中断超时", "absent": "入场等待超时", "withdrawn": "已离开秘境", "forfeit": "已退出挑战", "interrupted": "服务中断，本场未结算奖励", "unavailable": "角色状态已变化"}
@@ -47,6 +50,17 @@ var ready_to_close := false
 var leaving := false
 var effects_layer: Control
 var feedback: Node2D
+var bark_label: Label
+var story_prop: Control
+var prop_tween: Tween
+var bark_tween: Tween
+var entrance_played := false
+var low_hp_played := false
+var last_boss_stage := -1
+var story_data: Dictionary = {}
+var scene_player: Control
+var resolution_loading := false
+var resolution_played := false
 
 class ArenaEffects extends Control:
 	var view: Control
@@ -128,6 +142,20 @@ func build_hud() -> void:
 	banner.size = Vector2(900, 60)
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	outline(banner)
+	bark_label = ui.label_into(self, "", 21, Color("e8c6a5"))
+	bark_label.position = Vector2(405, 306)
+	bark_label.size = Vector2(630, 47)
+	bark_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bark_label.z_index = 12
+	bark_label.visible = false
+	outline(bark_label)
+	story_prop = StoryProp.new()
+	story_prop.position = Vector2(1145, 224)
+	story_prop.size = Vector2(190, 120)
+	story_prop.backdrop = false
+	story_prop.z_index = 8
+	story_prop.visible = false
+	add_child(story_prop)
 	for index in range(5):
 		var action := index + 1
 		var button: Button = ui.button(self, ACTION_NAMES[index], queue_action.bind(action), index == 0)
@@ -218,6 +246,7 @@ func receive_state(snapshot: Dictionary) -> void:
 	else:
 		mechanic_hint.text = str(stage.get("tactics", TACTICS.get(state.boss_id, "红色区域即将受到攻击，及时移动或踏云闪避")))
 	mechanic_hint.tooltip_text = mechanic_hint.text
+	update_story_performance(mechanic)
 	banner.text = {"waiting": "准备入场", "countdown": "准备开战 · %d" % int(state.seconds), "fighting": "", "reconnecting": "等待重连 · %d 秒" % int(state.seconds), "finished": ""}.get(state.phase, "连接秘境…")
 	exit_button.text = "退出挑战" if state.phase in ["fighting", "reconnecting"] else "离开秘境"
 	if state.get("result") is Dictionary:
@@ -227,6 +256,56 @@ func receive_state(snapshot: Dictionary) -> void:
 		var cooldown := float(player.cd[index + 1]) * 0.04
 		action_buttons[index].text = ACTION_NAMES[index] + (" · %.1f 秒" % cooldown if cooldown > 0 else "")
 	queue_redraw()
+
+func update_story_performance(mechanic: Dictionary) -> void:
+	if str(state.get("boss_id", "")) not in STORY_BOSSES:
+		return
+	var presentation: Dictionary = state.get("presentation", {})
+	var barks: Dictionary = presentation.get("barks", {})
+	if state.get("phase") == "fighting" and not entrance_played:
+		entrance_played = true
+		show_bark(str(barks.get("entry", "")))
+		var entrance: Dictionary = presentation.get("entrance", {})
+		show_story_prop(str(entrance.get("style", "lamp")))
+	if state.get("phase") != "fighting":
+		return
+	var boss_stage := int(mechanic.get("stage", 0))
+	if last_boss_stage < 0:
+		last_boss_stage = boss_stage
+	elif boss_stage != last_boss_stage:
+		last_boss_stage = boss_stage
+		show_bark(str(barks.get("phase", "")))
+	var enemy: Dictionary = state.get("enemy", {})
+	if not low_hp_played and float(enemy.get("max_hp", 1)) > 0 and float(enemy.get("hp", 1)) / float(enemy.get("max_hp", 1)) < 0.35:
+		low_hp_played = true
+		show_bark(str(barks.get("low_hp", "")))
+
+func show_bark(text: String) -> void:
+	if text.is_empty():
+		return
+	if bark_tween and bark_tween.is_valid():
+		bark_tween.kill()
+	bark_label.text = str(entry.get("name", "守关者")) + " · " + text
+	bark_label.visible = true
+	bark_label.modulate.a = 0.0
+	bark_tween = create_tween()
+	bark_tween.tween_property(bark_label, "modulate:a", 1.0, 0.14)
+	bark_tween.tween_interval(1.55)
+	bark_tween.tween_property(bark_label, "modulate:a", 0.0, 0.35)
+	bark_tween.tween_callback(func(): bark_label.visible = false)
+
+func show_story_prop(style: String) -> void:
+	if prop_tween and prop_tween.is_valid():
+		prop_tween.kill()
+	story_prop.art = style
+	story_prop.stage_id = str(state.get("boss_id", ""))
+	story_prop.visible = true
+	story_prop.modulate.a = 0.0
+	prop_tween = create_tween()
+	prop_tween.tween_property(story_prop, "modulate:a", 0.78, 0.2)
+	prop_tween.tween_interval(1.6)
+	prop_tween.tween_property(story_prop, "modulate:a", 0.0, 0.35)
+	prop_tween.tween_callback(func(): story_prop.visible = false)
 
 func _process(delta: float) -> void:
 	animation_clock += delta
@@ -413,9 +492,72 @@ func show_result() -> void:
 	else:
 		ui.paragraph(column, str(END_REASONS.get(result.reason, "可以调整装备后再次挑战")), 22, Color("f5e4c3"))
 		ui.paragraph(column, "可在锻造台强化装备、组合流派，再来挑战。", 20, Color("f5e4c3"))
+	if result.won and str(state.get("boss_id", "")) in STORY_BOSSES:
+		var barks: Dictionary = state.get("presentation", {}).get("barks", {})
+		ui.paragraph(column, str(entry.get("name", "守关者")) + "：“" + str(barks.get("defeat", "……")) + "”", 20, Color("d9b69b"))
+	ui.button(column, "战后 · 归途留言", load_resolution.bind(false))
 	ui.button(column, "返回秘境", request_leave, true)
 	ui.button(column, "查看本章剧情", func(): ui.open_story(str(Adventure.stage(str(state.boss_id)).get("chapter_id", ""))))
 	ui.button(column, "前往锻造台", func(): ui.open_treasure("forge"))
+	if result.won and result.get("reward", {}).get("first_clear", false):
+		load_resolution.call_deferred(true)
+
+func load_resolution(auto_play: bool) -> void:
+	if resolution_loading or is_instance_valid(scene_player) or (auto_play and resolution_played):
+		return
+	resolution_loading = true
+	var core := get_tree().root.get_node("GameKernel")
+	var result: Dictionary = await core.dispatch("story.snapshot", {"cultivator_id": cultivator_id})
+	resolution_loading = false
+	if is_queued_for_deletion() or not result.ok:
+		if not auto_play and not is_queued_for_deletion():
+			ui.toast(str(result.get("message", "战后剧情读取失败")))
+		return
+	story_data = result.data
+	var scene: Dictionary = {}
+	for row in story_data.get("scenes", []):
+		if str(row.get("stage_id", "")) == str(state.get("boss_id", "")) and row.get("kind") == "resolution":
+			scene = row
+			break
+	if scene.is_empty() or not scene.get("replayable", false):
+		return
+	if auto_play and scene.get("completed", false):
+		return
+	resolution_played = true
+	present_scene(scene, core)
+
+func present_scene(scene: Dictionary, core: Node) -> void:
+	var player := StoryScenePlayer.new()
+	player.scene_data = scene.duplicate(true)
+	player.kernel = core
+	player.cultivator_id = cultivator_id
+	player.variants = story_data.get("variants", {})
+	player.persist_marker = not scene.get("completed", false)
+	scene_player = player
+	StoryScenePlayer.mount(player, get_tree().root)
+	player.finished.connect(resolution_finished)
+
+func load_home() -> void:
+	if resolution_loading or is_instance_valid(scene_player):
+		return
+	resolution_loading = true
+	var core := get_tree().root.get_node("GameKernel")
+	var result: Dictionary = await core.dispatch("story.snapshot", {"cultivator_id": cultivator_id})
+	resolution_loading = false
+	if is_queued_for_deletion() or not result.ok:
+		return
+	story_data = result.data
+	var home: Dictionary = story_data.get("home", {})
+	var scene: Variant = home.get("scene")
+	if home.get("available", false) and not home.get("completed", false) and scene is Dictionary:
+		present_scene(scene, core)
+
+func resolution_finished(scene_id: String, _skipped: bool, saved: bool) -> void:
+	scene_player = null
+	if not saved:
+		ui.toast("回村标记未同步，可从主线章节重试。" if scene_id == "ending.home" else "战后标记未同步，可点“归途留言”重试。")
+	elif scene_id == "stage.b19.resolution":
+		load_home()
 
 static func status_text(statuses: Array) -> String:
 	var parts: PackedStringArray = []
@@ -427,9 +569,11 @@ static func status_text(statuses: Array) -> String:
 	return " / ".join(parts)
 
 func can_close() -> bool:
-	return ready_to_close
+	return ready_to_close and not resolution_loading and not is_instance_valid(scene_player)
 
 func request_leave() -> void:
+	if resolution_loading or is_instance_valid(scene_player):
+		return
 	if ready_to_close:
 		ui.open_expedition_lobby()
 		return
@@ -459,6 +603,8 @@ func leave() -> void:
 	ui.open_expedition_lobby()
 
 func _exit_tree() -> void:
+	if is_instance_valid(scene_player):
+		scene_player.queue_free()
 	var audio := get_node_or_null("/root/GameAudio")
 	if audio != null:
 		audio.leave_battle(self)

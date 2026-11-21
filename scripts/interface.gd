@@ -452,8 +452,13 @@ func _gallery_image(image: TextureRect, index: int) -> void:
 		toast("风格图正在生成，完成后会保存至 concepts 文件夹。")
 
 func reset_demo() -> void:
+	if game.state.is_remote():
+		toast("正式账号不使用演示重置，现有进度已保留。")
+		return
 	close_modal()
-	game.state.reset_demo()
+	if not game.state.reset_demo():
+		toast("当前进度未执行演示重置。")
+		return
 	game.player.position = Vector3(0, 0.2, 1)
 	refresh()
 	toast("已恢复初始演示资源")

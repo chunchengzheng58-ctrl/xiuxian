@@ -92,7 +92,17 @@ func _draw() -> void:
 			arc.append((center + Vector2(cos(a), sin(a)) * (68 if view.sword_visual else 47)).snapped(Vector2(3, 3)))
 		_draw_action_fx("blade",center,travel,Vector2(170,170) if view.sword_visual else Vector2(115,115),.85)
 		draw_polyline(arc, Color(0.18, 0.35, 0.3, 0.5), 15 if view.sword_visual else 8)
-		draw_polyline(arc, Color("ffe7aa") if view.counter_visual>0 else Color("8fd0b4"), 8 if view.counter_visual>0 else (7 if view.sword_visual else 3))
+		var flowing: bool = view.flow_visual > 0.0
+		var blade_tint := Color("8fd0b4") if not flowing else Color("ffe0a1")
+		draw_polyline(arc, Color("ffe7aa") if view.counter_visual>0 else blade_tint, 8 if view.counter_visual>0 else (7 if view.sword_visual else 3))
+		if flowing and view.sword_visual:
+			# 行云剑气：金色流光沿出剑方向拖尾，与普通剑气一眼区分。
+			var head: Vector2 = center + view.cast_direction * 30.0
+			draw_line(head - view.cast_direction * 150.0, head, Color(1, .88, .55, .35), 16.0)
+			draw_line(head - view.cast_direction * 120.0, head, Color(1, .96, .82, .8), 5.0)
+			for i in range(6):
+				var spark: Vector2 = head - view.cast_direction * (i * 26.0) + Vector2(sin(time * 12 + i) * 16, cos(time * 9 + i) * 12)
+				draw_rect(Rect2(spark.snapped(Vector2(3, 3)), Vector2(5, 5)), Color(1, .9, .62, .8))
 		if not view.sword_visual and view.slash_combo == 3:
 			draw_arc(center,64,angle-1.45,angle+1.45,28,Color(1,.87,.55,.75),5)
 		if view.sword_visual:
@@ -159,7 +169,7 @@ func _signature_tint(profile: Dictionary, style: String) -> Color:
 func _paint_signature_zone(profile: Dictionary, tint: Color, fill_alpha: float, edge_alpha: float) -> void:
 	var edges := {}
 	for polygon: PackedVector2Array in Patterns.polygons(profile):
-		if polygon.size() < 3:
+		if polygon.size() < 3 or Geometry2D.triangulate_polygon(polygon).is_empty():
 			continue
 		draw_colored_polygon(polygon, Color(tint, fill_alpha))
 		for i in range(polygon.size()):
@@ -272,11 +282,19 @@ func _burst(center: Vector2, radius: Vector2, style: String, alpha: float, age: 
 
 func _boss_effects() -> void:
 	var brain: RefCounted = view.rules.brain
+	var boss: Vector2 = view.rules.boss_position
+	if view.boss_rage_visual > 0.0:
+		var rage_alpha: float = minf(1.0, view.boss_rage_visual / .4)
+		ellipse(boss, Vector2(view.boss_height * .25, 22), Color(.55, .06, .09, rage_alpha * .48), 3.0)
+		# 少量血息从脚边升起，不覆盖 Boss 躯干和玩家操作区。
+		for i in range(6):
+			var travel := fposmod(view.clock * .65 + i / 6.0, 1.0)
+			var point := boss + Vector2((i - 2.5) * 22.0, -travel * 52.0)
+			draw_line(point, point + Vector2(sin(i * 2.1) * 4.0, -9.0), Color(.62, .10, .14, (1.0 - travel) * rage_alpha * .48), 2.0)
 	var move: Dictionary = brain.move
 	if move.is_empty():
 		return
 	var color = _palette(str(move.style))
-	var boss: Vector2 = view.rules.boss_position
 	var hand = boss+Vector2(brain.facing.x*view.boss_height*.20,-view.boss_height*.45)
 	if brain.phase == "windup":
 		var progress: float = brain.progress()
@@ -292,6 +310,21 @@ func _boss_effects() -> void:
 		var mark = boss+Vector2(0,-view.boss_height-20)
 		draw_line(mark+Vector2(0,-8),mark+Vector2(0,4),Color("ffe6a6"),4)
 		draw_rect(Rect2(mark+Vector2(-2,9),Vector2(4,4)),Color("ffe6a6"))
+		# 蓄力技能名挂上头顶，聚气环随蓄力收缩，预警不再只有一个感叹号。
+		var title := str(move.get("name", ""))
+		var provoked := bool(move.get("provoked", false))
+		if provoked:
+			title = "激怒 · " + title
+		if not title.is_empty() and view.game != null:
+			var font: Font = view.game.title_font
+			var width := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x
+			var at: Vector2 = mark + Vector2(-width * .5, -22)
+			var tell_tint := Color("ef8b84") if provoked else Color("ffe6a6")
+			draw_string(font, at + Vector2(2, 2), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(.05, .06, .1, .85))
+			draw_string(font, at, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, tell_tint)
+		ellipse(hand, Vector2(70, 50) * (1.0 - progress) + Vector2(18, 14), Color(color, .55), 3.0)
+		if provoked:
+			ellipse(hand, Vector2(76, 55) * (1.0 - progress) + Vector2(20, 16), Color(.65, .08, .12, .65), 3.0)
 	if brain.phase == "attack" and not move.has("signature"):
 		match str(move.kind):
 			"charge":
@@ -344,6 +377,9 @@ func _boss_effects() -> void:
 		var lift: float = lerpf(view.boss_height*.45,25,travel)
 		var core = point+Vector2(brain.facing.x*view.boss_height*.20*(1-travel),-lift)
 		draw_line(core-direction*33,core,Color(color,.24),float(projectile.radius)*1.3)
+		for i in range(3):
+			var trail: Vector2 = core - direction * (18.0 + i * 16.0)
+			draw_circle(trail, maxf(1.5, float(projectile.radius) * (.5 - i * .12)), Color(color, .35 - i * .1))
 		_draw_action_fx(str(move.style),core+Vector2(0,12),fposmod(view.clock*2.2,1.0),Vector2.ONE*(float(projectile.radius)*4+20),.85)
 		if move.style in ["leaf","ink","seal"]:
 			var across = direction.orthogonal()*8
@@ -416,20 +452,161 @@ func _sap_flow(flow: Dictionary) -> void:
 func _landed_hit(burst: Dictionary) -> void:
 	var age: float = 1.0 - float(burst.life) / view.HIT_BURST_TIME
 	var center := Vector2(burst.position)
+	var finisher := bool(burst.get("finisher", false))
+	var flowing := bool(burst.get("flow", false))
+	var ultimate := bool(burst.get("ultimate", false))
+	var wave := int(burst.get("wave", 0))
 	var tint := Color("ffe49d") if burst.counter else Color("b1fae7")
+	if ultimate:
+		tint = Color("c85b60")
+	elif finisher:
+		tint = Color("b9434a")
+	elif flowing:
+		tint = Color("a8f0ff")
 	var radius := 95.0 if burst.sword or burst.counter else 68.0
-	var alpha := 1.0 - age
-	for i in range(10):
-		var ray := Vector2.from_angle(i * TAU / 10.0 + .27)
+	if finisher:
+		radius = 150.0
+	elif ultimate:
+		radius = 105.0 + wave * 16.0
+	var alpha := (1.0 - age) * (.72 if finisher else (.82 if ultimate else 1.0))
+	var rays := 16 if finisher else (12 if ultimate else 10)
+	for i in range(rays):
+		var ray := Vector2.from_angle(i * TAU / float(rays) + .27)
 		var start := center + ray * radius * (.18 + .61 * age)
 		var end := start + ray * radius * .44 * alpha
 		draw_line(start.snapped(Vector2(3, 3)), end.snapped(Vector2(3, 3)), Color(tint, alpha), 5.0 if i % 3 == 0 else 3.0)
+	# 冲击环与火花让"命中"和"挥空"一眼可分。
+	var ring := radius * (.35 + age * 1.15)
+	ellipse(center, Vector2(ring, ring * .72), Color(tint, alpha * .85), 4.0 if finisher else 2.5)
+	for i in range(12 if finisher else 6):
+		var direction := Vector2.from_angle(i * 2.4 + float(center.x) * .013)
+		var point := center + direction * radius * (.2 + age * 1.5) + Vector2(0, -age * 28)
+		var chip := 6.0 if finisher else 4.0
+		draw_rect(Rect2(point.snapped(Vector2(3, 3)), Vector2(chip, chip)), Color(tint, alpha))
 	if age < .3 and not view._reduced_flash():
 		var flash := 1.0 - age / .3
 		var span := (34.0 if burst.counter else 23.0) * flash
+		if finisher:
+			span *= 1.35
+			flash *= .55
+		elif ultimate:
+			flash *= .42
 		var points := PackedVector2Array([center + Vector2(-span, 0), center + Vector2(0, -span), center + Vector2(span, 0), center + Vector2(0, span)])
-		draw_colored_polygon(points, Color(1.0, .99, .89, flash))
-	_draw_action_fx("blade", center, age, Vector2.ONE * radius * 1.8, alpha)
+		# The last fade frames can collapse the diamond below triangulation precision.
+		if span >= 1.0:
+			draw_colored_polygon(points, Color(1.0, .99, .89, flash))
+	_draw_action_fx("blade", center, age, Vector2.ONE * radius * 1.8, alpha * (.42 if finisher else 1.0))
+
+## 有头尾收束和厚薄变化的刀光带，避免用等宽折线模拟剑气。
+func _blade_ribbon(origin: Vector2, radius: float, start_angle: float, end_angle: float, width: float, color: Color, phase: float = 0.0, jitter: float = 0.0) -> void:
+	var outer := PackedVector2Array()
+	var inner := PackedVector2Array()
+	var steps := 40
+	for i in range(steps + 1):
+		var t := float(i) / float(steps)
+		var a := lerpf(start_angle, end_angle, t)
+		var taper := pow(sin(t * PI), .72)
+		var r := radius + sin(t * 19.0 + phase) * jitter * taper
+		var half_width := width * taper
+		var radial := Vector2.from_angle(a)
+		outer.append(origin + radial * (r + half_width))
+		inner.append(origin + radial * (r - half_width * .42))
+	# 逐段绘制凸四边形，避免长弧带在引擎三角化时退化或自交。
+	for i in range(steps):
+		if i == 0:
+			draw_colored_polygon(PackedVector2Array([outer[0], outer[1], inner[1]]), color)
+		elif i == steps - 1:
+			draw_colored_polygon(PackedVector2Array([outer[i], outer[i + 1], inner[i]]), color)
+		else:
+			draw_colored_polygon(PackedVector2Array([outer[i], outer[i + 1], inner[i + 1], inner[i]]), color)
+
+## 终结斩：锥形主刀光、亮芯、交叉内斩、碎剑气与地面尘环。
+func _finisher_slash() -> void:
+	var age: float = 1.0 - view.finisher_visual / .5
+	var origin: Vector2 = view.finisher_origin
+	var direction: Vector2 = view.finisher_direction
+	var angle := direction.angle()
+	# 淡金薄刃保持在角色轮廓外侧，不用大面积高亮遮住动作。
+	var alpha: float = clampf(float(view.finisher_visual) / .25, 0.0, 1.0) * .78
+	var sweep := smoothstep(0.0, .30, age)
+	var reach := 190.0 + sweep * 20.0
+	var start_angle := angle - 1.80
+	var arc_span := lerpf(2.10, 3.20, sweep)
+	var end_angle := start_angle + arc_span
+	# 外层血光、中层暗红薄刃、内层灰红亮芯，头尾自然收成剑尖。
+	_blade_ribbon(origin, reach, start_angle, end_angle, 18.0, Color(.40, .025, .055, alpha * .16), age * 5.0, 3.0)
+	_blade_ribbon(origin, reach - 3.0, start_angle, end_angle, 11.0, Color(.62, .075, .11, alpha * .72), age * 5.0, 2.0)
+	_blade_ribbon(origin, reach - 6.0, start_angle, end_angle, 2.8, Color(.94, .43, .43, alpha * .72), age * 5.0, 1.0)
+	# 仅在弧刃末端留一颗小亮尖，提示挥剑方向。
+	var head_direction := Vector2.from_angle(end_angle)
+	var head_tangent := head_direction.orthogonal()
+	var head := origin + head_direction * (reach - 3.0)
+	draw_colored_polygon(PackedVector2Array([head + head_tangent * 16.0, head + head_direction * 4.0, head - head_tangent * 11.0, head - head_direction * 3.0]), Color(.95, .48, .46, alpha * .72))
+	# 少量碎光沿外侧飞散，角色身体附近不铺粒子。
+	for i in range(12):
+		var t := fposmod(i * .3819 + age * .45, 1.0)
+		var a := start_angle + arc_span * t
+		var radial := Vector2.from_angle(a)
+		var tangent := radial.orthogonal()
+		var point := origin + radial * (reach + 9.0 + age * (20.0 + i % 4 * 7.0)) + tangent * sin(i * 4.17) * 10.0
+		var spark_alpha := alpha * .38 * sin(t * PI)
+		if i % 6 == 0:
+			draw_colored_polygon(PackedVector2Array([point + radial * 5.0, point + tangent * 2.0, point - radial * 5.0, point - tangent * 2.0]), Color(.72, .16, .20, spark_alpha))
+		else:
+			var length := 4.0 + i % 3 * 2.0
+			draw_line((point - tangent * length).snapped(Vector2(2, 2)), (point + tangent * length * .35).snapped(Vector2(2, 2)), Color(.90, .34, .35, spark_alpha), 1.5)
+	var ground := origin + Vector2(0, 70)
+	var spread := 60.0 + age * 130.0
+	ellipse(ground, Vector2(spread, spread * .3), Color(.58, .20, .20, alpha * .42), 3.0)
+	for i in range(6):
+		var a := i * TAU / 6.0
+		var debris := ground + Vector2(cos(a) * spread, sin(a) * spread * .28 - sin(age * PI) * (10.0 + i % 3 * 5.0))
+		draw_rect(Rect2(debris.snapped(Vector2(3, 3)), Vector2(4, 3)), Color(.52, .24, .22, alpha * .32))
+	_draw_action_fx("blade", origin + direction * reach * .6, age, Vector2(320, 260), alpha * .22)
+
+func _ultimate_domain() -> void:
+	var origin: Vector2 = view.rules.ult_origin
+	var direction: Vector2 = view.rules.ult_direction
+	var normal := direction.orthogonal()
+	var fade: float = clampf(float(view.ultimate_visual) / .24, 0.0, 1.0)
+	var clock: float = view.rules.ult_clock
+	var wave: int = view.rules.ult_wave
+	# 剑域只画薄边界与剑印，不铺全屏色块；角色、Boss 与危险区始终清晰。
+	ellipse(origin, Vector2(126 + wave * 18, 30 + wave * 4), Color(.62, .15, .18, .34 * fade), 2.5)
+	ellipse(origin, Vector2(82, 19), Color(.83, .28, .28, .20 * fade), 1.5)
+	var end := origin + direction * 820.0
+	draw_line(origin + normal * 38.0, end + normal * 38.0, Color(.56, .12, .16, .14 * fade), 2.0)
+	draw_line(origin - normal * 38.0, end - normal * 38.0, Color(.56, .12, .16, .14 * fade), 2.0)
+	for i in range(4):
+		var seal := origin + direction * (145.0 + i * 175.0)
+		var tip := seal + direction * 22.0
+		var ink := Color(.76, .24, .25, .40 * fade)
+		draw_line(seal - direction * 18.0, tip, ink, 3.0)
+		draw_line(seal - normal * 8.0, seal + normal * 8.0, ink, 2.0)
+		draw_line(tip, tip - direction * 8.0 + normal * 5.0, ink, 2.0)
+		draw_line(tip, tip - direction * 8.0 - normal * 5.0, ink, 2.0)
+	for i in range(view.rules.ULT_WAVE_TIMES.size()):
+		var local: float = (clock - float(view.rules.ULT_WAVE_TIMES[i])) / .28
+		if local <= 0.0 or local >= 1.0:
+			continue
+		var center := origin + direction * (135.0 + i * 165.0) - Vector2(0, 62)
+		var angle := direction.angle()
+		var alpha := (1.0 - local) * .72 * fade
+		_blade_ribbon(center, 104.0 + i * 20.0, angle - 1.02, angle + 1.02, 9.0 + i * 2.0, Color(.67, .14, .17, alpha), local * .45)
+		draw_line(center - direction * 55.0 + normal * 16.0, center + direction * 72.0 - normal * 16.0, Color(.91, .40, .39, alpha * .75), 3.0)
+		ellipse(origin + direction * (135.0 + i * 165.0), Vector2(48 + i * 9, 12 + i * 2), Color(.68, .18, .20, alpha * .55), 2.0)
+
+## 普攻判定可视化：可命中给淡青提示，终结就绪给暗红双圈。
+func _combat_cues(hero: Vector2) -> void:
+	var rules: RefCounted = view.rules
+	if rules.brain == null or rules.finished:
+		return
+	if rules.next_finisher():
+		var pulse := .65 + sin(view.clock * 9.0) * .2
+		ellipse(hero + Vector2(0, 4), Vector2(46, 16), Color(.72, .20, .24, pulse * .75), 3.0)
+		ellipse(rules.boss_position, Vector2(view.boss_height * .28, 26), Color(.72, .20, .24, pulse * .65), 4.0)
+	elif rules.in_basic_range(hero) and rules.attack_cd <= 0.0:
+		ellipse(rules.boss_position, Vector2(view.boss_height * .26, 22), Color(.6, .95, .85, .35), 2.0)
 
 func _challenge_effects() -> void:
 	if view.rules.brain == null:
@@ -437,6 +614,11 @@ func _challenge_effects() -> void:
 	var hero: Vector2 = view.hero.position
 	var boss: Vector2 = view.rules.boss_position
 	var brain: RefCounted = view.rules.brain
+	_combat_cues(hero)
+	if view.finisher_visual > 0.0:
+		_finisher_slash()
+	if view.ultimate_visual > 0.0:
+		_ultimate_domain()
 	for burst in view.hit_bursts:
 		_landed_hit(burst)
 	for flow in view.sap_flows:

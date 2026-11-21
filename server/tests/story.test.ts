@@ -9,10 +9,10 @@ import type { Database } from '../src/database.js';
 import { campaignConfig } from '../src/game/character-progression.js';
 import { fixture } from './helpers.js';
 
-async function player(context: TestContext) {
+async function player(context: TestContext, avatar: 'male' | 'female' = 'male', username = 'story_player') {
   const app = await fixture(context);
-  const account = await app.account('story_player');
-  const actor = await app.command(account.token, 'growth.create_member', { role: 'self', name: '守灯者', profile: { title: '行者', avatar: 'male' }, request_id: secret() });
+  const account = await app.account(username);
+  const actor = await app.command(account.token, 'growth.create_member', { role: 'self', name: '守灯者', profile: { title: '行者', avatar }, request_id: secret() });
   const cid = actor.cultivator_id as string;
   const send = (command: string, fields: object = {}, key = secret()) => app.command(account.token, command, { cultivator_id: cid, ...fields }, key);
   return { app, account, cid, send };
@@ -82,7 +82,7 @@ test('章节奖励、剧情存档与回看可重试；故障时钱包、历练�
   assert.equal(app.db.get<{ count: number }>("SELECT COUNT(*) AS count FROM adventure_awards WHERE cultivator_id=? AND kind='chapter'", cid)!.count, 1);
   const replay = (await send('story.snapshot')).chapters.find((row: { id: string }) => row.id === 'wood');
   assert.equal(replay.nodes[0].completed, true);
-  assert.match(replay.nodes[1].dialogue[0].text, /铜铃/);
+  assert.match(replay.nodes[1].dialogue[0].text, /新芽和旧树/);
 });
 
 test('五枚归衡印、章间顺序、旁篇与终章反馈由正式存档决定', async context => {
@@ -100,10 +100,24 @@ test('五枚归衡印、章间顺序、旁篇与终章反馈由正式存档决�
   assert.equal(complete.ending.all_twenty_cleared, true);
   assert.equal(complete.adventure.cleared_count, 20);
   assert.equal(complete.adventure.seal_count, 5);
-  assert.match(complete.ending.text, /守灯者，欢迎回家/);
+  assert.match(complete.ending.text, /锅里还有/);
   assert.equal(complete.current_chapter_id, null);
   assert.ok(complete.chapters.every((row: { status: string }) => row.status === 'completed'));
-  const xp = complete.adventure.xp;
+  assert.equal(complete.pending_scene.scene_id, 'stage.b19.resolution');
+  await send('story.advance', { node_id: 'stage.b19.resolution' });
+  const homeReady = await send('story.snapshot');
+  assert.equal(homeReady.home.available, true);
+  assert.equal(homeReady.home.completed, false);
+  assert.equal(homeReady.pending_scene.scene_id, 'ending.home');
+  assert.equal(homeReady.home.scene.kind, 'ending');
+  assert.match(homeReady.home.scene.dialogue.at(-2).text, /锅里还有/);
+  const xp = homeReady.adventure.xp;
+  const settledHome = await send('story.advance', { node_id: 'ending.home' });
+  assert.equal(settledHome.home.completed, true);
+  assert.equal(settledHome.pending_scene, null);
+  assert.equal(settledHome.adventure.xp, xp);
+  await send('story.advance', { node_id: 'ending.home' });
+  assert.equal((await send('story.snapshot')).home.completed, true);
   await send('story.advance', { node_id: 'finale.closure' });
   assert.equal((await send('story.snapshot')).adventure.xp, xp);
 });
@@ -150,4 +164,55 @@ test('关闭并重新打开独立存档后，剧情、历练与幂等领奖回�
     assert.equal(server.db.get<{ count: number }>("SELECT COUNT(*) AS count FROM ledger WHERE reason='story_chapter'")!.count, 2);
     assert.deepEqual(server.db.all('PRAGMA foreign_key_check'), []);
   } finally { await server.app.close(); }
+});
+
+test('战前、战后与旧档补看共用幂等场景标记，跳过场景不会发奖励', async context => {
+  const { app, account, cid, send } = await player(context);
+  const initial = await send('story.snapshot');
+  assert.equal(initial.scenes.length, 41);
+  const prelude = initial.scenes.find((row: { scene_id: string }) => row.scene_id === 'stage.b01.prelude');
+  assert.equal(prelude.available, true);
+  assert.equal(initial.scenes.find((row: { scene_id: string }) => row.scene_id === 'stage.b01.resolution').status, 'locked');
+  await assert.rejects(send('story.advance', { node_id: 'stage.b01.resolution' }), /尚未解锁/);
+  const before = app.game.characterSnapshot(account.account_id, cid);
+  const played = await send('story.advance', { node_id: 'stage.b01.prelude' }, 'stable-scene');
+  assert.equal(played.scenes.find((row: { scene_id: string }) => row.scene_id === 'stage.b01.prelude').completed, true);
+  assert.deepEqual(await send('story.advance', { node_id: 'stage.b01.prelude' }, 'stable-scene'), played);
+  await send('story.advance', { node_id: 'stage.b01.prelude' }, 'another-scene-key');
+  assert.equal(app.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM story_nodes WHERE cultivator_id = ? AND node_id = ?', cid, 'stage.b01.prelude')!.count, 1);
+  assert.deepEqual(app.game.characterSnapshot(account.account_id, cid).resources, before.resources);
+
+  persistedClear(app, cid, 'b01');
+  const won = await send('story.snapshot');
+  assert.equal(won.pending_scene.scene_id, 'stage.b01.resolution');
+  const resolved = await send('story.advance', { node_id: 'stage.b01.resolution' });
+  assert.equal(resolved.scenes.find((row: { scene_id: string }) => row.scene_id === 'stage.b01.resolution').completed, true);
+  assert.equal(resolved.pending_scene, null);
+
+  // A legacy clear can backfill its prelude without replaying combat or changing rewards.
+  persistedClear(app, cid, 'b02');
+  const legacy = await send('story.snapshot');
+  assert.equal(legacy.scenes.find((row: { scene_id: string }) => row.scene_id === 'stage.b02.prelude').replayable, true);
+  await send('story.advance', { node_id: 'stage.b02.prelude' });
+  assert.equal(app.db.get<{ count: number }>("SELECT COUNT(*) AS count FROM story_nodes WHERE cultivator_id = ? AND node_id LIKE 'stage.%'", cid)!.count, 3);
+  assert.deepEqual(app.game.characterSnapshot(account.account_id, cid).resources, before.resources);
+});
+
+test('男女主角与男女阿宁四种组合共享完整剧情、奖励和结局，外观选择独立保存', async context => {
+  let shared: unknown;
+  for (const protagonist of ['male', 'female'] as const) {
+    for (const companion of ['male', 'female'] as const) {
+      const { send } = await player(context, protagonist, `parity_${protagonist}_${companion}`);
+      await send('story.variant', { companion_variant: companion });
+      const snapshot = await send('story.snapshot');
+      assert.deepEqual(snapshot.variants, { protagonist, companion, parity: 'shared_story_rewards_flags' });
+      const comparable = {
+        chapters: snapshot.chapters.map((chapter: any) => ({ id: chapter.id, reward: chapter.reward, dialogue: chapter.nodes.map((node: any) => node.dialogue) })),
+        scenes: snapshot.scenes.map((scene: any) => ({ id: scene.scene_id, dialogue: scene.dialogue })),
+        home: snapshot.home.scene.dialogue,
+      };
+      if (shared === undefined) shared = comparable;
+      else assert.deepEqual(comparable, shared);
+    }
+  }
 });

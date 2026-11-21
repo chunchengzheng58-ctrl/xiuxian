@@ -72,8 +72,10 @@ func _run() -> void:
 		previous_radius = tuned.attack_radius
 	check(monotonic, "All twenty Bosses consistently gain speed and reach with difficulty")
 	var state = fresh()
+	check(state.boss_unlocked("b00") and not state.boss_unlocked("b01") and not state.boss_unlocked("b19") and state.unlocked_boss_count() == 1, "A fresh save opens only the first Boss")
 	check(not state.begin_named_boss("unknown").ok and state.boss_attempts == 0, "Invalid Boss identifiers do not consume an attempt")
-	check(state.begin_named_boss("b19").ok and state.selected_boss_id == "b19", "All twenty doors can be selected without an attribute lock")
+	check(not state.begin_named_boss("b19").ok and state.boss_attempts == 0, "The final Boss cannot bypass sequential unlocks or consume an attempt")
+	check(state.begin_named_boss("b00").ok and state.selected_boss_id == "b00" and state.boss_attempts == 1, "The unlocked first Boss can be selected")
 	check(not state.complete_boss("unknown"), "Unknown Bosses cannot create phantom clears")
 	var hero_stats = state.health_attributes.duplicate(true)
 	for id in ["b00", "b01"]:
@@ -84,6 +86,10 @@ func _run() -> void:
 			combat.attack(combat.boss_position - Vector2(100, 0))
 		check(combat.won and state.boss_cleared(id), "Defeating the actual named enemy stores its own clear: " + id)
 	check(state.cleared_bosses.size() == 2 and state.heal_unlocked(), "Two distinct named Boss clears unlock recovery")
+	check(state.boss_unlocked("b02") and not state.boss_unlocked("b03") and state.unlocked_boss_count() == 3, "Clearing the first two Bosses opens exactly the next encounter")
+	var legacy_progress = fresh()
+	legacy_progress.complete_boss("b04", {"time": 8})
+	check(legacy_progress.boss_unlocked("b04") and legacy_progress.boss_unlocked("b05") and not legacy_progress.boss_unlocked("b01"), "Legacy non-contiguous clears remain replayable and keep their following gate open")
 	check(state.health_attributes == hero_stats, "Boss progress does not consume health attributes")
 	check(not state.complete_boss("b00") and state.cleared_bosses.size() == 2, "Repeated clears are idempotent")
 	state.complete_boss("b00", {"time": 1.0, "damage_taken": 0, "hits": 0})
@@ -99,7 +105,7 @@ func _run() -> void:
 	var loaded = State.new()
 	loaded.save_file_override = file_path
 	loaded.load_game()
-	check(loaded.cleared_bosses.size() == 2 and loaded.boss_records.b00.time == 1.0 and loaded.selected_boss_id == "b19", "Named clears, records and selection survive save/load")
+	check(loaded.cleared_bosses.size() == 2 and loaded.boss_records.b00.time == 1.0 and loaded.selected_boss_id == "b00" and loaded.boss_unlocked("b02"), "Named clears, records, selection and unlocks survive save/load")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(file_path))
 	var legacy_file = FileAccess.open(file_path, FileAccess.WRITE)
 	legacy_file.store_string(JSON.stringify({"schema": 3, "cultivation": 137, "cleared_stages": ["attack_10", "attack_20"], "best_records": {"attack_10": {"time": 12.0}}}))
@@ -116,11 +122,16 @@ func _run() -> void:
 	await process_frame
 	scene.state = fresh()
 	scene.state.apply_health_profile(scene.state.HealthProfile.mock(40, 1))
+	scene.account_ready = true
 	scene.ui.refresh()
 	scene.ui.open_boss()
 	await process_frame
 	check(is_instance_valid(scene.ui.corridor) and scene.ui.modal_open and scene.player.blocked, "The village trial entrance opens the real corridor and blocks village movement")
 	check(scene.ui.corridor.portal_buttons.size() == 20 and scene.ui.corridor.jump_buttons.size() == 20, "Every Boss has an interactive portal and a navigation shortcut")
+	check(not scene.ui.corridor.portal_buttons[0].disabled and scene.ui.corridor.portal_buttons[13].disabled and scene.ui.corridor.status_labels[13].text.contains("未解锁"), "The fresh corridor shows the first gate open and later gates locked")
+	scene.ui.corridor.enter_boss("b13")
+	await process_frame
+	check(not is_instance_valid(scene.ui.combat) and is_instance_valid(scene.ui.corridor), "A locked gate cannot be entered through its corridor action")
 	var hall_position: Vector2 = scene.ui.corridor.player_position
 	var town_position: Vector2 = scene.player.position
 	Input.action_press("move_right")
@@ -132,6 +143,9 @@ func _run() -> void:
 	check(scene.ui.corridor.camera_x > 1000, "Region navigation traverses a genuinely long camera-scrolling corridor")
 	var resume_position: Vector2 = scene.ui.corridor.player_position
 	var resume_camera: float = scene.ui.corridor.camera_x
+	for i in range(13):
+		scene.state.complete_boss(rows[i].id, {"time": 30.0 + i})
+	scene.ui.corridor.refresh()
 	scene.ui.corridor.portal_buttons[13].pressed.emit()
 	await process_frame
 	check(scene.ui.combat.boss_id == "b13" and scene.ui.combat.scene_file_path == Catalogue.scene_path("b13"), "Clicking a portal loads that Boss's dedicated scene")
@@ -143,12 +157,22 @@ func _run() -> void:
 	await process_frame
 	check(scene.ui.corridor.player_position.distance_to(resume_position) < 1 and absf(scene.ui.corridor.camera_x - resume_camera) < 1, "Returning from combat restores hall position and camera")
 	for row in rows:
+		if int(row.index) > 0 and not scene.state.boss_cleared(rows[int(row.index) - 1].id):
+			scene.state.complete_boss(rows[int(row.index) - 1].id, {"time": 40.0})
+		scene.ui.corridor.refresh()
 		scene.ui.corridor.focus_boss(row.index)
 		scene.ui.corridor.portal_buttons[row.index].pressed.emit()
 		await process_frame
 		check(scene.ui.combat.boss_id == row.id and scene.ui.combat.dragon.texture != null and scene.ui.combat.encounter.arena == row.arena, "Actual portal-to-arena handoff: " + row.id)
 		scene.ui.combat.leave_battle()
 		await process_frame
+	# Return to a fresh profile for the real victory -> next-gate unlock check.
+	scene.state = fresh()
+	scene.state.apply_health_profile(scene.state.HealthProfile.mock(40, 1))
+	scene.account_ready = true
+	scene.ui.refresh()
+	scene.ui.open_boss()
+	await process_frame
 	scene.ui.corridor.focus_boss(0)
 	await process_frame
 	var key = InputEventKey.new()
@@ -164,9 +188,10 @@ func _run() -> void:
 		scene.ui.combat.basic_attack()
 		await create_timer(.18).timeout
 		check(scene.ui.combat.result_shown and scene.state.boss_cleared("b00"), "Actual victory UI records the named Boss clear")
+		check(scene.state.boss_unlocked("b01") and not scene.state.boss_unlocked("b02"), "A real first-gate victory unlocks only the second gate")
 		scene.ui.combat.leave_battle()
 		await process_frame
-		check(scene.ui.corridor.status_labels[0].text.contains("已通关"), "The returned corridor shows the saved clear marker")
+		check(scene.ui.corridor.status_labels[0].text.contains("已通关") and scene.ui.corridor.status_labels[1].text.contains("已解锁") and not scene.ui.corridor.portal_buttons[1].disabled, "The returned corridor marks the clear and opens the second portal")
 		var portal_rect: Rect2 = scene.ui.corridor.portal_buttons[0].get_global_rect()
 		var mouse = InputEventMouseMotion.new()
 		mouse.position = portal_rect.get_center()

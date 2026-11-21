@@ -336,12 +336,39 @@ func complete_stage(track: String, tier: int, record: Dictionary = {}) -> bool:
 func boss_cleared(id: String) -> bool:
 	return id in cleared_bosses
 
+func boss_unlocked(id: String) -> bool:
+	var encounter = TrialCatalogue.entry(id)
+	if encounter.is_empty():
+		return false
+	var index := int(encounter.index)
+	# 已通关关卡始终可重玩；旧档的非连续首通也不会被新规则锁回。
+	return index == 0 or boss_cleared(id) or boss_cleared(TrialCatalogue.at(index - 1).id)
+
+func unlocked_boss_count() -> int:
+	var count := 0
+	for encounter in TrialCatalogue.all():
+		if boss_unlocked(encounter.id):
+			count += 1
+	return count
+
+func boss_lock_message(id: String) -> String:
+	var encounter = TrialCatalogue.entry(id)
+	if encounter.is_empty():
+		return "没有找到这位祟兽。"
+	var index := int(encounter.index)
+	if index <= 0:
+		return ""
+	var previous = TrialCatalogue.at(index - 1)
+	return "尚未解锁 · 请先通关第 %02d 关「%s」。" % [index, previous.name]
+
 func begin_named_boss(id: String) -> Dictionary:
 	if not allows_battle():
 		return {"ok": false, "message": "当前角色正在渡劫、闭关或已飞升，请切换修行中的家人。"}
 	var encounter = TrialCatalogue.entry(id)
 	if encounter.is_empty():
 		return {"ok": false, "message": "没有找到这位祟兽。"}
+	if not boss_unlocked(id):
+		return {"ok": false, "message": boss_lock_message(id)}
 	selected_boss_id = id
 	selected_tier = int(encounter.tier)
 	refresh_boss_day()
@@ -615,6 +642,12 @@ func load_data(data: Dictionary) -> void:
 		for id in cleared_bosses:
 			if saved_records.get(id) is Dictionary:
 				boss_records[id] = saved_records[id].duplicate(true)
+	if not boss_unlocked(selected_boss_id):
+		selected_boss_id = "b00"
+		for encounter in TrialCatalogue.all():
+			if boss_unlocked(encounter.id) and not boss_cleared(encounter.id):
+				selected_boss_id = encounter.id
+				break
 	selected_track = str(data.get("selected_track", "attack"))
 	if selected_track not in ATTRIBUTE_KEYS:
 		selected_track = "attack"
@@ -657,7 +690,12 @@ func load_data(data: Dictionary) -> void:
 	if int(data.get("schema", 1)) < 6 and today() in rewarded_days:
 		equipment.qi = Equipment.DAILY_QI
 
-func reset_demo() -> void:
+func reset_demo() -> bool:
+	# A server-backed state is a read model, never a disposable demo save.
+	# Keep this domain guard even if a stale or modified client exposes the button.
+	if is_remote():
+		push_warning("Demo reset rejected for a server-backed cultivator.")
+		return false
 	lifecycle_v2 = {}
 	lifecycle_load_error = ""
 	equipment = Equipment.fresh()
@@ -690,7 +728,7 @@ func reset_demo() -> void:
 	medication_required = true
 	recovery_status = "not_started"
 	trial_cleared = false
-	save_game()
+	return save_game()
 
 ## schema 6 的可选扩展；家族外层 schema 8 不改，旧版无此字段时从已确认恢复篇章迁移。
 func lifecycle_record() -> Dictionary:

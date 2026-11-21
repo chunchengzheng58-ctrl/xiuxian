@@ -77,11 +77,15 @@ func _run() -> void:
 	var actor = scene.family.state_for(member.id)
 	actor.apply_health_profile(actor.HealthProfile.mock(40,1))
 	scene.ui.activate_family(member.id)
+	scene.account_ready = true
 	var wallet: int = actor.equipment.qi
 	scene.ui.open_boss()
 	await process_frame
 	expect(scene.ui.corridor.portal_buttons.size()==20,"fixed progression presents twenty portals")
 	await capture("fixed-progression")
+	for i in range(6):
+		actor.complete_boss("b%02d" % i, {"time": 40.0})
+	scene.ui.corridor.refresh()
 	scene.ui.corridor.focus_boss(6)
 	await process_frame
 	await click(scene.ui.corridor.portal_buttons[6])
@@ -130,6 +134,8 @@ func _run() -> void:
 	scene.ui.combat.leave_battle()
 	await process_frame
 	expect(scene.ui.corridor.portal_buttons.size()==20,"return restores fixed progression corridor")
+	for i in range(19):
+		actor.complete_boss("b%02d" % i, {"time": 45.0})
 	for sample in [["b18","three-hit-chain"],["b03","ground-residue"]]:
 		scene.ui.start_corridor_boss(sample[0])
 		await process_frame
@@ -184,6 +190,7 @@ func _run() -> void:
 	var female: Dictionary = scene.family.add_member({"name":"素月","relation":"母亲","age":63,"sex":"女","title":"素月真人","avatar":"female","mode":"family","consent":true})
 	var female_actor = scene.family.state_for(female.id)
 	female_actor.apply_health_profile(female_actor.HealthProfile.mock(40,1))
+	female_actor.complete_boss("b00", {"time": 40.0})
 	scene.ui.activate_family(female.id)
 	scene.ui.start_corridor_boss("b01")
 	await process_frame
