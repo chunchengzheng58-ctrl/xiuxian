@@ -6,6 +6,7 @@ const Player = preload("res://scripts/pixel_player.gd")
 const Interface = preload("res://scripts/gameplay_interface.gd")
 const Assets = preload("res://scripts/pixel_assets.gd")
 const Effects = preload("res://scripts/pixel_effects.gd")
+const VillageRoads = preload("res://scripts/village_roads.gd")
 @export var interface_override: Script
 const SPAWN = Vector2(681, 565)
 var state = State.new()
@@ -171,11 +172,22 @@ func _build_roads() -> void:
 	roads.append(_corridor([Vector2(1144, 665), Vector2(1160, 605), Vector2(1193, 560), Vector2(1222, 509), Vector2(1256, 456), Vector2(1289, 405)], 33))
 	roads.append(PackedVector2Array([Vector2(1194, 375), Vector2(1255, 352), Vector2(1353, 367), Vector2(1350, 419), Vector2(1284, 450), Vector2(1224, 433)]))
 	_build_terrain_blockers()
+	for points in VillageRoads.VILLAGE_ROADS.values():
+		roads.append(VillageRoads.map_points(points))
 	var points = [SPAWN, Vector2(530, 521), Vector2(402, 480), Vector2(717, 434), Vector2(752, 366), Vector2(794, 316), Vector2(819, 256), Vector2(857, 206), Vector2(781, 600), Vector2(850, 632), Vector2(939, 668), Vector2(1024, 698), Vector2(1144, 665), Vector2(1160, 605), Vector2(1193, 560), Vector2(1222, 509), Vector2(1256, 456), Vector2(1289, 405), Vector2(275, 503)]
+	for i in range(4):
+		points[8 + i] = VillageRoads.BRIDGE_ROUTE[i]
 	for i in range(points.size()):
 		navigation.add_point(i, points[i])
-	for edge in [[0, 1], [1, 2], [0, 3], [3, 4], [4, 5], [5, 6], [6, 7], [0, 8], [8, 9], [9, 10], [10, 11], [11, 12], [12, 13], [13, 14], [14, 15], [15, 16], [16, 17], [2, 18]]:
+	for edge in [[0, 1], [1, 2], [0, 3], [3, 4], [4, 5], [5, 6], [6, 7], [0, 8], [8, 9], [9, 10], [10, 11], [12, 13], [13, 14], [14, 15], [15, 16], [16, 17], [2, 18]]:
 		navigation.connect_points(edge[0], edge[1])
+	var previous := 11
+	for point in VillageRoads.BRIDGE_ROUTE.slice(4, -1):
+		var index: int = navigation.get_available_point_id()
+		navigation.add_point(index, point)
+		navigation.connect_points(previous, index)
+		previous = index
+	navigation.connect_points(previous, 12)
 	# A real physics obstruction along the family home's facade.
 	var body = StaticBody2D.new()
 	body.name = "HomeFacadeCollision"
@@ -216,7 +228,9 @@ func _build_terrain_blockers() -> void:
 		])
 	]
 	terrain_crossings = [
-		_corridor([Vector2(690, 650), Vector2(760, 662), Vector2(840, 685), Vector2(920, 710), Vector2(1000, 738), Vector2(1060, 720), Vector2(1100, 685)], 22)
+		_corridor([Vector2(690, 650), Vector2(760, 662), Vector2(840, 685), Vector2(920, 710), Vector2(1000, 738), Vector2(1060, 720), Vector2(1100, 685)], 22),
+		PackedVector2Array(VillageRoads.BRIDGE_DECK),
+		PackedVector2Array(VillageRoads.EAST_LANDING),
 	]
 	roads.append_array(terrain_crossings)
 
@@ -284,6 +298,9 @@ func _build_sites() -> void:
 	treasure_stand.z_index = 480
 	add_child(treasure_stand)
 	for site in sites:
+		if site.id == "records":
+			_build_stele_inscription(site.title)
+			continue
 		var vertical = site.id not in ["home", "gacha"]
 		var plaque = PanelContainer.new()
 		plaque.position = site.label
@@ -302,23 +319,47 @@ func _build_sites() -> void:
 		var label = Label.new()
 		label.text = "\n".join(site.title.split("")) if vertical else site.title
 		label.add_theme_font_override("font", title_font)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		label.add_theme_color_override("font_color", Color("f6d694"))
 		label.add_theme_font_size_override("font_size", 22 if vertical else 21)
 		plaque.add_child(label)
-		var area = Area2D.new()
-		area.position = site.position
-		area.input_pickable = true
-		var hit = CollisionShape2D.new()
-		var circle = CircleShape2D.new()
-		circle.radius = 45
-		hit.shape = circle
-		area.add_child(hit)
-		var id: String = site.id
-		area.input_event.connect(func(_viewport, event, _shape):
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not ui.modal_open:
-				travel_to(id)
-		)
-		add_child(area)
+
+func _build_stele_inscription(title: String) -> void:
+	var background := $PaintedVillageBackground as Sprite2D
+	var face := VillageRoads.STELE_FACE
+	var label := Label.new()
+	label.name = "SteleInscription"
+	label.text = "\n".join(title.split(""))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.scale = Vector2.ONE / background.scale
+	label.position = face.position / background.scale
+	label.size = face.size
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_override("font", title_font)
+	label.add_theme_font_size_override("font_size", 25)
+	label.add_theme_constant_override("line_spacing", -3)
+	label.add_theme_color_override("font_color", Color("ffe0a0"))
+	label.add_theme_color_override("font_shadow_color", Color("49321e"))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	background.add_child(label)
+
+func site_at_map_point(point: Vector2) -> String:
+	var closest := ""
+	var best := 1.0
+	for site in sites:
+		var entrance: Vector2 = site.position
+		var sign: Vector2 = site.label + (Vector2(48, 20) if site.id in ["home", "gacha"] else Vector2(21, 51))
+		if site.id == "records":
+			sign = VillageRoads.STELE_FACE.get_center()
+		var entrance_distance := entrance.distance_to(point) / 65.0
+		var sign_distance := ((point - sign) / Vector2(52.0, 66.0)).length()
+		var distance := minf(entrance_distance, sign_distance)
+		if distance < best:
+			best = distance
+			closest = site.id
+	return closest
 
 func _build_player() -> void:
 	player = CharacterBody2D.new()
@@ -469,6 +510,13 @@ func _draw() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if get_node("/root/GameOptions").settings_open:
 		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not ui.modal_open:
+		var point: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
+		var site := site_at_map_point(point)
+		if not site.is_empty():
+			travel_to(site)
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_action_pressed("interact") and not event.is_echo():
 		interact_nearby()
 	if event is InputEventKey and event.pressed and not event.echo:
