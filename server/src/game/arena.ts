@@ -7,10 +7,10 @@ import { SocialService } from './social.js';
 const inviteSeconds = 90;
 const entrySeconds = 45;
 const roomLimit = 128;
-const queueSeconds = 60;
+const queueSeconds = 15;
 const queueLimit = 512;
 type Duel = {
-  id: string; relation_id: string; challenger_id: string; opponent_id: string;
+  id: string; relation_id: string; challenger_id: string; opponent_id: string | null;
   challenger_alias: string; opponent_alias: string; challenger_avatar: string; opponent_avatar: string;
   status: 'pending' | 'active' | 'declined' | 'cancelled' | 'finished';
   created_at: number; expires_at: number; closed_at: number | null; winner: Seat | null;
@@ -24,7 +24,32 @@ type Queued = { cultivator_id: string; joined_at: number; expires_at: number; ra
 type Room = { row: Duel; match: ArenaMatch };
 export type ArenaSubscription = { id: string; seat: Seat };
 const counterpart = (seat: Seat): Seat => seat === 0 ? 1 : 0;
-const avatar = (actor: Character) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
+const avatar = (actor: Pick<Character, 'profile'>) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
+const practiceRoster = [
+  { id: '青岫47', avatar: 'male', style: 0 },
+  { id: 'LingZhou08', avatar: 'female', style: 1 },
+  { id: '停云_17', avatar: 'female', style: 2 },
+  { id: '栖鹤313', avatar: 'male', style: 3 },
+  { id: '海棠夜雨', avatar: 'female', style: 0 },
+  { id: 'QiuBai26', avatar: 'male', style: 1 },
+  { id: '晚钟92', avatar: 'male', style: 2 },
+  { id: '归舟_406', avatar: 'female', style: 3 },
+] as const;
+const virtualNames = ['青石听雨', '一叶归舟', 'LinYe', '松间微风', '望川_', '云水行', 'WenYu_', '照夜', '木槿听风', '暮山行', '寻松', '鹤归', 'JianYu', '青衫渡', '石桥听雪', '长亭晚'];
+function legacyOpponentId(matchId: string) {
+  const seed = Number.parseInt(matchId.slice(-10), 16);
+  const name = virtualNames[seed % virtualNames.length]!;
+  return name + (1 + Math.floor(seed / virtualNames.length) % 9999);
+}
+function opponentAlias(row: Duel) {
+  const legacyPlaceholder = ['', '对手', '青竹剑侍（AI陪练）'].includes(row.opponent_alias);
+  return row.opponent_id === null && legacyPlaceholder ? legacyOpponentId(row.id) : row.opponent_alias;
+}
+function arenaOptions(row: Duel) {
+  if (row.opponent_id !== null) return {};
+  const profile = practiceRoster.find(player => player.id === row.opponent_alias);
+  return { practiceStyle: profile?.style ?? (Number.parseInt(row.id.slice(-2), 16) & 3) };
+}
 
 export class ArenaService {
   private rooms = new Map<string, Room>();
@@ -60,7 +85,7 @@ export class ArenaService {
     const active = this.db.get<Duel>("SELECT * FROM arena_duels WHERE status = 'active' AND (challenger_id = ? OR opponent_id = ?) LIMIT 1",
       cultivatorId, cultivatorId);
     const queued = this.db.get('SELECT 1 FROM arena_queue WHERE cultivator_id = ? AND expires_at > ?', cultivatorId, this.now()) !== undefined;
-    return { invitations, active: !!active, queued, active_mode: active?.mode ?? null };
+    return { invitations, active: !!active, queued, active_mode: active ? (active.opponent_id === null ? 'ranked' : active.mode) : null };
   }
 
   matchmakingLobby(actor: Character) {
@@ -72,17 +97,17 @@ export class ArenaService {
     const rank = played ? this.db.get<{ count: number }>(`SELECT COUNT(*) AS count FROM arena_ratings
       WHERE wins + losses + draws > 0 AND (rating > ? OR (rating = ? AND cultivator_id < ?))`, rating.rating, rating.rating, actor.id)!.count + 1 : null;
     const queue = this.db.get<{ joined_at: number; expires_at: number }>('SELECT joined_at, expires_at FROM arena_queue WHERE cultivator_id = ?', actor.id) ?? null;
-    const active = this.db.get<Duel>(`SELECT * FROM arena_duels WHERE mode = 'ranked' AND status = 'active'
+    const active = this.db.get<Duel>(`SELECT * FROM arena_duels WHERE (mode = 'ranked' OR opponent_id IS NULL) AND status = 'active'
       AND (challenger_id = ? OR opponent_id = ?) LIMIT 1`, actor.id, actor.id);
     const leaderboard = this.db.all<Rating & { alias: string }>(`SELECT r.*, p.alias FROM arena_ratings r
       JOIN social_profiles p ON p.cultivator_id = r.cultivator_id WHERE wins + losses + draws > 0
       ORDER BY rating DESC, r.cultivator_id LIMIT 30`).map(({ alias, rating, wins, losses, draws }, index) =>
       ({ rank: index + 1, alias, rating, wins, losses, draws }));
-    const recent = this.db.all<Duel>(`SELECT * FROM arena_duels WHERE mode = 'ranked' AND status = 'finished'
+    const recent = this.db.all<Duel>(`SELECT * FROM arena_duels WHERE (mode = 'ranked' OR opponent_id IS NULL) AND status = 'finished'
       AND (challenger_id = ? OR opponent_id = ?) ORDER BY created_at DESC, rowid DESC LIMIT 10`, actor.id, actor.id)
       .map(row => this.lobbyView(row, row.challenger_id === actor.id ? 0 : 1));
     return { profile, rating: { rating: rating.rating, wins: rating.wins, losses: rating.losses, draws: rating.draws, rank },
-      queue, active: active ? { match_id: active.id, opponent: active.challenger_id === actor.id ? active.opponent_alias : active.challenger_alias, mode: active.mode } : null,
+      queue, active: active ? { match_id: active.id, opponent: active.challenger_id === actor.id ? opponentAlias(active) : active.challenger_alias, mode: 'ranked' } : null,
       leaderboard, recent, server_now: this.now() };
   }
 
@@ -133,7 +158,7 @@ export class ArenaService {
 
   reply(actor: Character, matchId: string, action: string) {
     const row = this.owned(actor, matchId);
-    requireCondition(row.status === 'pending' && row.expires_at > this.now(), 'DUEL_INVITE_CLOSED', '约战邀请已结束', 409);
+    requireCondition(row.opponent_id !== null && row.status === 'pending' && row.expires_at > this.now(), 'DUEL_INVITE_CLOSED', '约战邀请已结束', 409);
     const received = actor.id === row.opponent_id;
     requireCondition((received && ['accept', 'decline'].includes(action)) || (!received && action === 'cancel'),
       'DUEL_ACTION_UNAVAILABLE', '当前角色无法执行此操作', 409);
@@ -179,7 +204,7 @@ export class ArenaService {
     const seat = own?.id === row.challenger_id ? 0 : 1;
     if (row.status === 'active' && !this.rooms.has(matchId)) {
       const remaining = row.expires_at - this.now();
-      if (remaining > 0) this.rooms.set(matchId, { row, match: new ArenaMatch(Math.ceil(remaining * 1000 / arenaTickMs)) });
+      if (remaining > 0) this.rooms.set(matchId, { row, match: new ArenaMatch(Math.ceil(remaining * 1000 / arenaTickMs), arenaOptions(row)) });
       else this.db.transaction(() => this.recordResult(row, { winner: null, reason: 'absent', hp: [100, 100] }));
     }
     return { id: matchId, seat };
@@ -209,8 +234,12 @@ export class ArenaService {
     const now = this.now();
     if (now === this.lastSweep) return changed;
     this.lastSweep = now;
-    changed = this.db.transaction(() => this.sweepQueue() || false) || changed;
-    changed = this.db.transaction(() => this.pairQueue()) || changed;
+    changed = this.db.transaction(() => {
+      const swept = this.sweepQueue();
+      const paired = this.pairQueue();
+      const filled = this.fillExpiredWithBots(now);
+      return swept || paired || filled;
+    }) || changed;
     for (const row of this.db.all<Duel>("SELECT * FROM arena_duels WHERE status = 'active' AND expires_at <= ?", now)) {
       if (!this.rooms.has(row.id)) {
         this.db.transaction(() => this.recordResult(row, { winner: null, reason: 'absent', hp: [100, 100] }));
@@ -229,15 +258,16 @@ export class ArenaService {
     if (!row || !room && row.status !== 'finished') return null;
     let match = room?.match;
     if (!match) {
-      match = new ArenaMatch(0);
+      match = new ArenaMatch(0, arenaOptions(row));
       match.fighters[0].hp = row.challenger_hp!;
       match.fighters[1].hp = row.opponent_hp!;
       match.finish(row.winner, row.reason!);
     }
     return {
       match_id: row.id, seat: subscription.seat, ...match.state(),
-      names: [row.challenger_alias, row.opponent_alias], avatars: [row.challenger_avatar, row.opponent_avatar],
-      mode: row.mode, rating_change: this.ratingChange(row, subscription.seat),
+      names: [row.challenger_alias, opponentAlias(row)], avatars: [row.challenger_avatar, row.opponent_avatar],
+      mode: row.opponent_id === null ? 'ranked' : row.mode,
+      rating_change: this.ratingChange(row, subscription.seat),
     };
   }
 
@@ -257,9 +287,9 @@ export class ArenaService {
   private lobbyView(row: Duel, seat: Seat) {
     const change = this.ratingChange(row, seat);
     return {
-      match_id: row.id, seat, opponent: seat === 0 ? row.opponent_alias : row.challenger_alias,
+      match_id: row.id, seat, opponent: seat === 0 ? opponentAlias(row) : row.challenger_alias,
       status: row.status, winner: row.winner, reason: row.reason, expires_at: row.expires_at, closed_at: row.closed_at,
-      mode: row.mode, rating_before: change?.before ?? null, rating_after: change?.after ?? null, rating_delta: change?.delta ?? null,
+      mode: row.opponent_id === null ? 'ranked' : row.mode, rating_before: change?.before ?? null, rating_after: change?.after ?? null, rating_delta: change?.delta ?? null,
     };
   }
 
@@ -275,6 +305,7 @@ export class ArenaService {
   }
 
   private rateResult(row: Duel, result: ArenaResult) {
+    if (row.opponent_id === null) return;
     const left = this.rating(row.challenger_id), right = this.rating(row.opponent_id);
     const expected = 1 / (1 + 10 ** ((right.rating - left.rating) / 400));
     const score = result.winner === null ? 0.5 : result.winner === 0 ? 1 : 0;
@@ -291,12 +322,12 @@ export class ArenaService {
 
   private sweepQueue() {
     const invalid = this.db.all<{ cultivator_id: string }>(`SELECT q.cultivator_id FROM arena_queue q
-      JOIN cultivators c ON c.id = q.cultivator_id WHERE q.expires_at <= ? OR c.role <> 'self' OR c.lifecycle <> 'cultivating'
+      JOIN cultivators c ON c.id = q.cultivator_id WHERE c.role <> 'self' OR c.lifecycle <> 'cultivating'
       OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.account_id = c.account_id AND s.expires_at > ?)
       OR NOT EXISTS(SELECT 1 FROM social_profiles p WHERE p.cultivator_id = c.id)
       OR EXISTS(SELECT 1 FROM expedition_runs e WHERE e.cultivator_id = c.id AND e.finished_at IS NULL)
       OR EXISTS(SELECT 1 FROM arena_duels d WHERE (d.challenger_id = c.id OR d.opponent_id = c.id)
-        AND (d.status = 'active' OR (d.status = 'pending' AND d.expires_at > ?)))`, this.now(), this.now(), this.now());
+        AND (d.status = 'active' OR (d.status = 'pending' AND d.expires_at > ?)))`, this.now(), this.now());
     for (const row of invalid) {
       this.db.run('DELETE FROM arena_queue WHERE cultivator_id = ?', row.cultivator_id);
       this.db.run('UPDATE accounts SET revision = revision + 1 WHERE id = (SELECT account_id FROM cultivators WHERE id = ?)', row.cultivator_id);
@@ -317,7 +348,7 @@ export class ArenaService {
       if (paired.has(left.cultivator_id)) continue;
       const candidates = queued.filter(right => right.cultivator_id !== left.cultivator_id && !paired.has(right.cultivator_id)
         && !blocked.has([left.cultivator_id, right.cultivator_id].sort().join(':'))
-        && (this.now() - Math.min(left.joined_at, right.joined_at) >= 30
+        && (this.now() - Math.min(left.joined_at, right.joined_at) >= queueSeconds
           || Math.abs(left.rating - right.rating) <= 200 + (this.now() - Math.min(left.joined_at, right.joined_at)) * 40));
       candidates.sort((a, b) => Math.abs(left.rating - a.rating) - Math.abs(left.rating - b.rating) || a.joined_at - b.joined_at);
       const right = candidates[0];
@@ -335,6 +366,34 @@ export class ArenaService {
       capacity--;
     }
     return paired.size > 0;
+  }
+
+  private fillExpiredWithBots(now: number) {
+    let capacity = roomLimit - this.db.get<{ count: number }>("SELECT COUNT(*) AS count FROM arena_duels WHERE status = 'active'")!.count;
+    const expired = this.db.all<{ cultivator_id: string; alias: string; profile: string }>(`SELECT q.cultivator_id, p.alias, c.profile
+      FROM arena_queue q JOIN social_profiles p ON p.cultivator_id = q.cultivator_id
+      JOIN cultivators c ON c.id = q.cultivator_id WHERE q.expires_at <= ? ORDER BY q.joined_at, q.rowid`, now);
+    for (const player of expired) {
+      this.db.run('DELETE FROM arena_queue WHERE cultivator_id = ?', player.cultivator_id);
+      if (capacity > 0) {
+        // A practice opponent has no account. Store it separately from rated duels,
+        // while the client can still use the matchmaking lobby and arena screens.
+        const matchId = id('duel');
+        const previous = this.db.get<{ opponent_alias: string }>(`SELECT opponent_alias FROM arena_duels
+          WHERE challenger_id = ? AND opponent_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1`, player.cultivator_id);
+        const lastProfile = practiceRoster.findIndex(profile => profile.id === previous?.opponent_alias);
+        const nextProfile = lastProfile < 0 ? Number.parseInt(matchId.slice(-2), 16) : lastProfile + 1;
+        const firstChoice = practiceRoster[nextProfile % practiceRoster.length]!;
+        const opponent = firstChoice.id === player.alias ? practiceRoster[(nextProfile + 1) % practiceRoster.length]! : firstChoice;
+        this.db.run(`INSERT INTO arena_duels (id, relation_id, challenger_id, opponent_id,
+          challenger_alias, opponent_alias, challenger_avatar, opponent_avatar, status, created_at, expires_at, mode)
+          VALUES (?, '', ?, NULL, ?, ?, ?, ?, 'active', ?, ?, 'friendly')`,
+        matchId, player.cultivator_id, player.alias, opponent.id, avatar(player), opponent.avatar, now, now + entrySeconds);
+        capacity--;
+      }
+      this.touch(player.cultivator_id, null);
+    }
+    return expired.length > 0;
   }
 
   private find(id: string) { return this.db.get<Duel>('SELECT * FROM arena_duels WHERE id = ?', id); }
@@ -365,7 +424,7 @@ export class ArenaService {
     'DUEL_ALREADY_PENDING', '一方已有约战或正在擂台上', 409);
   }
 
-  private touch(left: string, right: string) {
+  private touch(left: string, right: string | null) {
     this.db.run('UPDATE accounts SET revision = revision + 1 WHERE id IN (SELECT account_id FROM cultivators WHERE id IN (?, ?))', left, right);
   }
 }
