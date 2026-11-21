@@ -5,6 +5,7 @@ extends Node
 signal completed(action: String, response: Dictionary)
 signal progress(message: String)
 signal family_synced
+signal play_days_changed
 const GameApi = preload("res://scripts/net/game_api.gd")
 const GameRealtime = preload("res://scripts/net/game_realtime.gd")
 const DEFAULT_URL = "http://127.0.0.1:8080"
@@ -23,6 +24,8 @@ var generation = 0
 var account: Dictionary = {}
 var social_summary: Dictionary = {}
 var duel_summary: Dictionary = {}
+var play_days := -1
+var _next_play_day_check_ms := 0
 var _social_revision: int = -1
 var busy = false
 var allow_autostart = true
@@ -61,6 +64,20 @@ func kernel() -> Node:
 
 func is_authenticated() -> bool:
 	return not api.bearer_token.is_empty() and not account.is_empty() and api.base_url == service_url
+
+func record_play_day() -> void:
+	var now_ms := Time.get_ticks_msec()
+	if now_ms < _next_play_day_check_ms or not is_authenticated():
+		return
+	_next_play_day_check_ms = now_ms + 30_000
+	var own := int(generation)
+	var result: Dictionary = await api.request_api("/api/v2/play-days", HTTPClient.METHOD_POST)
+	if own != generation or not result.ok:
+		return
+	var total := int(result.data.get("play_days", -1))
+	if total > play_days:
+		play_days = total
+		play_days_changed.emit()
 
 static func web_service_origin(page_origin: String, page_path: String) -> String:
 	# 只有正式项目 Pages 使用跨源 API。其他网页部署继续走同源。
@@ -197,6 +214,8 @@ func _begin(clear_identity: bool = true) -> void:
 
 func _clear() -> void:
 	account.clear()
+	play_days = -1
+	_next_play_day_check_ms = 0
 	social_summary.clear()
 	duel_summary.clear()
 	_social_revision = -1
