@@ -28,19 +28,20 @@ var refreshing: bool = false
 var mutating: bool = false
 var refresh_again: bool = false
 var view_epoch: int = 0
+var community_request_keys: Dictionary = {}
 
 func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
 	var tabs := HBoxContainer.new()
 	add_child(tabs)
-	for item in [["friends", "好友"], ["requests", "好友申请"], ["profile", "我的名片"], ["blocked", "屏蔽列表"]]:
+	for item in [["friends", "好友"], ["requests", "好友申请"], ["profile", "我的名片"], ["blocked", "屏蔽列表"], ["communities", "社群"], ["world", "世界频道"]]:
 		var tab: Button = ui.button(tabs, item[1], show_view.bind(item[0]))
 		tab.toggle_mode = true
 		tab.add_theme_color_override("font_pressed_color", Color("fff0cb"))
 		tab_buttons[item[0]] = tab
 	requests_tab = tab_buttons["requests"]
-	ui.button(tabs, "刷新", refresh)
+	ui.button(tabs, "刷新", refresh_current)
 	body = VBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 8)
@@ -79,6 +80,12 @@ func show_view(next: String, selected: String = "") -> void:
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rows.add_theme_constant_override("separation", 7)
 	scroll.add_child(rows)
+	if view == "world":
+		render_world()
+		return
+	if view == "communities":
+		render_communities()
+		return
 	if view == "chat":
 		var row := HBoxContainer.new()
 		body.add_child(row)
@@ -89,6 +96,96 @@ func show_view(next: String, selected: String = "") -> void:
 	else:
 		render_home()
 
+func render_world() -> void:
+	var epoch := view_epoch
+	var result: Dictionary = await game.account_api.api.request_api("/api/v2/social/world?limit=30")
+	if epoch != view_epoch or not is_instance_valid(rows):
+		return
+	if not result.ok:
+		status.text = str(result.message)
+		return
+	clear_rows()
+	var message := line_edit(rows, "写一条世界频道消息", 500)
+	ui.button(rows, "发送", func(): community_write("/api/v2/social/world/messages", {"body": message.text.strip_edges()}))
+	for item in result.data.messages:
+		ui.paragraph(rows, "%s：%s" % [item.author.username, item.body], 18)
+
+func refresh_current() -> void:
+	match view:
+		"world": render_world()
+		"communities": render_communities()
+		_: refresh()
+
+func render_communities() -> void:
+	var epoch := view_epoch
+	var result: Dictionary = await game.account_api.api.request_api("/api/v2/social/communities")
+	if epoch != view_epoch or not is_instance_valid(rows):
+		return
+	if not result.ok:
+		status.text = str(result.message)
+		return
+	for child in rows.get_children():
+		rows.remove_child(child)
+		child.queue_free()
+	var name_input := line_edit(rows, "社群名称", 48)
+	ui.button(rows, "创建公开社群", func(): community_write("/api/v2/social/communities", {"name": name_input.text.strip_edges(), "visibility": "public", "max_members": 50}))
+	for community in result.data.communities:
+		var path := "/api/v2/social/communities/" + str(community.community_id).uri_encode()
+		ui.paragraph(rows, str(community.name), 20)
+		ui.button(rows, "查看动态", community_feed.bind(path))
+		if community.get("joined", false):
+			ui.button(rows, "退出社群", community_write.bind(path + "/leave", {}))
+		else:
+			ui.button(rows, "加入社群", community_write.bind(path + "/join", {}))
+
+func community_feed(path: String) -> void:
+	var epoch := view_epoch
+	var result: Dictionary = await game.account_api.api.request_api(path)
+	if epoch != view_epoch or not is_instance_valid(rows):
+		return
+	if not result.ok:
+		status.text = str(result.message)
+		return
+	for child in rows.get_children():
+		rows.remove_child(child)
+		child.queue_free()
+	ui.button(rows, "返回社群列表", render_communities)
+	if result.data.community.get("joined", false):
+		var entry := line_edit(rows, "写一条社群动态", 1000)
+		ui.button(rows, "发布动态", func(): community_write(path + "/posts", {"body": entry.text.strip_edges()}, path))
+	for post in result.data.posts:
+		ui.paragraph(rows, "%s：%s" % [post.author.username, post.body], 18)
+		for comment in post.comments:
+			ui.paragraph(rows, str(comment.body), 16)
+		if result.data.community.get("joined", false):
+			var post_path := path + "/posts/" + str(post.post_id).uri_encode()
+			var comment_input := line_edit(rows, "写评论", 500)
+			ui.button(rows, "发送评论", func(): community_write(post_path + "/comments", {"body": comment_input.text.strip_edges()}, path))
+			ui.button(rows, "点赞", community_write.bind(post_path + "/reactions", {"kind": "like"}, path))
+
+func community_write(path: String, payload: Dictionary, feed_path: String = "") -> void:
+	if mutating:
+		return
+	mutating = true
+	var epoch := view_epoch
+	var data := payload.duplicate()
+	var signature := path + JSON.stringify(payload, "", true).sha256_text()
+	if not community_request_keys.has(signature):
+		community_request_keys[signature] = Crypto.new().generate_random_bytes(16).hex_encode()
+	data.request_id = community_request_keys[signature]
+	var result: Dictionary = await game.account_api.api.request_api(path, HTTPClient.METHOD_POST, data)
+	mutating = false
+	if result.code not in ["NETWORK_ERROR", "INTERNAL_ERROR", "BACKEND_UNAVAILABLE", "INVALID_RESPONSE", "HTTP_ERROR"]:
+		community_request_keys.erase(signature)
+	if epoch != view_epoch:
+		return
+	if not result.ok:
+		status.text = str(result.message)
+	elif feed_path.is_empty():
+		refresh_current()
+	else:
+		community_feed(feed_path)
+
 func line_edit(parent: Control, hint: String, maximum: int) -> LineEdit:
 	var entry := LineEdit.new()
 	entry.placeholder_text = hint
@@ -97,6 +194,7 @@ func line_edit(parent: Control, hint: String, maximum: int) -> LineEdit:
 	entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	entry.add_theme_font_size_override("font_size", 20)
 	parent.add_child(entry)
+	preload("res://scripts/mobile_ui.gd").configure_text_input(entry)
 	return entry
 
 func build_profile() -> void:
@@ -167,7 +265,7 @@ func render_home() -> void:
 		return
 	if view in ["friends", "requests"]:
 		invite_form.visible = home.get("profile") is Dictionary
-	if view == "chat":
+	if view in ["chat", "communities", "world"]:
 		return
 	clear_rows()
 	if home.is_empty():

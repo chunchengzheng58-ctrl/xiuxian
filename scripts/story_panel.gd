@@ -1,6 +1,7 @@
 extends VBoxContainer
 
 const Adventure = preload("res://scripts/adventure_catalogue.gd")
+const StoryScenePlayer = preload("res://scripts/story_scene_player.gd")
 const STATUSES = {"locked": "未开启", "available": "线索待听", "active": "正在游历", "claimable": "章节奖励待领", "completed": "已归衡"}
 var game: Node
 var ui: Control
@@ -17,6 +18,9 @@ var content: VBoxContainer
 var status_label: Label
 var summary_label: Label
 var objective_label: Label
+var scene_player: Control
+var home_after_refresh := false
+var resume_checked := false
 
 func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -66,8 +70,20 @@ func refresh() -> void:
 		if chapter_id.is_empty():
 			chapter_id = str(current.get("current_chapter_id") if current.get("current_chapter_id") != null else "finale")
 		render()
-	else:
-		status_label.text = result.message
+		var resumed := false
+		if not resume_checked:
+			resume_checked = true
+			var pending: Variant = current.get("pending_scene")
+			if pending is Dictionary:
+				resumed = true
+				home_after_refresh = false
+				play_scene(pending, true)
+		if home_after_refresh and not resumed:
+			home_after_refresh = false
+			var home: Dictionary = current.get("home", {})
+			if home.get("available", false) and not home.get("completed", false) and home.get("scene") is Dictionary:
+				play_scene(home.scene, true)
+
 	if refresh_again:
 		refresh.call_deferred()
 
@@ -111,6 +127,12 @@ func render() -> void:
 	ui.paragraph(content, str(chapter.get("lock_reason", "")) if chapter.status == "locked" else str(chapter.objective), 19)
 	ui.paragraph(content, "正式秘境 %d / %d · %s" % [int(chapter.cleared_count), chapter.stage_ids.size(), str(STATUSES.get(chapter.status, ""))], 17)
 	ui.paragraph(content, ("已领取：" if chapter.status == "completed" else "章节奖励（限领一次）：") + Adventure.reward_text(chapter.reward), 17)
+	var pending: Variant = current.get("pending_scene")
+	if pending is Dictionary:
+		ui.button(content, "继续未看完 · " + str(pending.get("title", "灯下旧事")), play_scene.bind(pending, true), true).disabled = busy
+	var variants: Dictionary = current.get("variants", {})
+	var companion_name := "男" if str(variants.get("companion", "female")) == "male" else "女"
+	ui.button(content, "同行者外观：阿宁（%s） · 男女剧情完全相同" % companion_name, change_companion).disabled = busy
 	var actions := HBoxContainer.new()
 	content.add_child(actions)
 	for node in chapter.nodes:
@@ -120,6 +142,19 @@ func render() -> void:
 		if not node.available:
 			ui.paragraph(content, str(node.lock_reason), 16)
 	ui.button(content, "前往本章秘境", ui.open_expedition_lobby.bind(chapter_id), chapter.status in ["active", "available"]).disabled = busy
+	var scene_actions := HBoxContainer.new()
+	content.add_child(scene_actions)
+	for scene in current.get("scenes", []):
+		if str(scene.get("stage_id", "")) not in chapter.stage_ids:
+			continue
+		var prefix := "战前" if scene.kind == "prelude" else "战后"
+		var caption := ("回看 · " if scene.get("completed", false) else "") + prefix + " · " + str(scene.get("title", ""))
+		var scene_button: Button = ui.button(scene_actions, caption, play_scene.bind(scene, not scene.get("completed", false)))
+		scene_button.disabled = busy or not scene.get("replayable", false)
+	if chapter_id == "finale":
+		var home: Dictionary = current.get("home", {})
+		if home.get("available", false) and home.get("scene") is Dictionary:
+			ui.button(content, "回村 · 按时吃饭" if not home.get("completed", false) else "回看 · 锅里还有", play_scene.bind(home.scene, not home.get("completed", false)), true).disabled = busy
 	if chapter.status == "completed":
 		var next_id: Variant = current.get("current_chapter_id")
 		if next_id is String and next_id != chapter_id:
@@ -205,6 +240,7 @@ func advance(id: String) -> void:
 	if result.ok:
 		reading_node_id = ""
 		status_label.text = "章节进度已保存。"
+		home_after_refresh = id == "finale.closure"
 		# 幂等重试回执可能早于后续战斗；重新读取服务端当前进度。
 		refresh()
 	else:
@@ -212,6 +248,43 @@ func advance(id: String) -> void:
 		render()
 		if refresh_again:
 			refresh.call_deferred()
+
+func change_companion() -> void:
+	if busy:
+		return
+	busy = true
+	var variants: Dictionary = current.get("variants", {})
+	var next_variant := "male" if str(variants.get("companion", "female")) == "female" else "female"
+	var result := await command("variant", {"companion_variant": next_variant})
+	busy = false
+	if result.ok:
+		current = result.data
+		status_label.text = "同行者外观已保存；剧情、奖励与旗标不变。"
+		render()
+	else:
+		status_label.text = result.message
+
+func play_scene(scene: Dictionary, save_marker: bool = true) -> void:
+	if is_instance_valid(scene_player) or scene.is_empty():
+		return
+	var player := StoryScenePlayer.new()
+	player.scene_data = scene.duplicate(true)
+	player.kernel = get_tree().root.get_node("GameKernel")
+	player.cultivator_id = cultivator_id
+	player.variants = current.get("variants", {})
+	player.persist_marker = save_marker and not scene.get("completed", false)
+	scene_player = player
+	StoryScenePlayer.mount(player, get_tree().root)
+	player.finished.connect(scene_finished)
+
+func scene_finished(scene_id: String, _skipped: bool, saved: bool) -> void:
+	scene_player = null
+	status_label.text = "场景已保存。" if saved else "场景已播放，但标记未同步；可从本章重试。"
+	await refresh()
+	if saved and scene_id.begins_with("stage.") and scene_id.ends_with(".prelude"):
+		var run: Variant = current.get("active_run")
+		if run is Dictionary and not run.get("result") is Dictionary and scene_id == "stage.%s.prelude" % str(run.get("stage_id", "")):
+			ui.open_expedition_battle(str(run.run_id))
 
 func command(kind: String, payload: Dictionary = {}) -> Dictionary:
 	var core := get_tree().root.get_node("GameKernel")

@@ -8,10 +8,12 @@ var repeat_input: LineEdit
 var display_input: LineEdit
 var register_avatar: OptionButton
 var submit_button: Button
+var remember_box: CheckBox
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	build()
+	game.account_api.call_deferred("resume_saved_login")
 
 func build() -> void:
 	for child in get_children():
@@ -75,6 +77,8 @@ func build() -> void:
 		register_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text(right, "注册子女账号" if register_mode else "欢迎回来", 30, GOLD_TEXT)
 	username_input = field(right, "用户名", "3—32 位字母、数字或下划线", "", 32)
+	var saved: Dictionary = game.account_api.login_preferences()
+	username_input.text = str(saved.get("username", ""))
 	password_input = field(right, "密码", "请输入密码（至少 12 位）", "", 128)
 	password_input.secret = true
 	password_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
@@ -97,7 +101,17 @@ func build() -> void:
 		avatars.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		personal.add_child(avatars)
 		register_avatar = option(avatars, "我的形象", ["男修", "女修"], 0)
-	status_label = paragraph(right, "注册或登录自己的账号后，再添加两位家人。", 16)
+	remember_box = CheckBox.new()
+	remember_box.text = "记住账号并保持登录（此设备）"
+	remember_box.button_pressed = bool(saved.get("remember", false))
+	remember_box.add_theme_font_size_override("font_size", 18)
+	right.add_child(remember_box)
+	remember_box.toggled.connect(func(enabled):
+		game.account_api.remember_login = enabled
+		if not enabled:
+			game.account_api.save_login_preferences("")
+	)
+	status_label = paragraph(right, "公共设备请勿勾选；不会保存明文密码。", 16)
 	submit_button = action(right, "注册并登录" if register_mode else "登录游戏", submit, true)
 	paragraph(right, "现场演示：不需要注册，直接进入一份模拟好的家庭数据。", 15)
 	action(right, "游客演示 · 无需注册  →", func(): ui.start_guest_demo())
@@ -136,7 +150,7 @@ func submit() -> void:
 	if password_input.text.length() < 12:
 		status_label.text = "密码至少需要 12 位。"
 		return
-	var payload = {"username": username_input.text.strip_edges(), "password": password_input.text}
+	var payload = {"username": username_input.text.strip_edges(), "password": password_input.text, "remember": remember_box.button_pressed}
 	if register_mode:
 		if password_input.text != repeat_input.text:
 			status_label.text = "两次输入的密码不一致。"

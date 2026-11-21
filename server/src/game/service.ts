@@ -259,6 +259,8 @@ export class GameService {
         return this.story.snapshot(this.own(accountId, text('cultivator_id')));
       case 'story.advance':
         return mutate(() => this.story.advance(this.own(accountId, text('cultivator_id')), text('node_id')));
+      case 'story.variant':
+        return mutate(() => this.story.setVariant(this.own(accountId, text('cultivator_id')), text('companion_variant')));
       case 'combat.expedition_start':
         return mutate(() => {
           const actor = this.own(accountId, text('cultivator_id'));

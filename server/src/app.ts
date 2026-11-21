@@ -6,7 +6,7 @@ import websocket from '@fastify/websocket';
 import { randomInt, timingSafeEqual } from 'node:crypto';
 import { Database } from './database.js';
 import { AuthService } from './auth.js';
-import { type Clock, DomainError, canonical, digest, requireCondition, secret, success } from './core.js';
+import { type Clock, DomainError, canonical, dayKey, digest, requireCondition, secret, success } from './core.js';
 import { contract, commands, validateCommand, stringField, boolField, positiveInteger, enumField, objectSchema, resultSchema } from './contracts.js';
 import { GameService, type GameExtensions, type Season } from './game/service.js';
 import { type RuleProviders, defaultProviders } from './game/rules.js';
@@ -15,6 +15,7 @@ import { HealthBridge, type SubmissionUpdate, type VerifiedResult } from './inte
 import { Outbox } from './integration/outbox.js';
 import { RealtimeHub } from './realtime/hub.js';
 import { type WebOptions, registerWeb } from './web.js';
+import { SocialService } from './social/service.js';
 
 export const healthScopes = ['binding:confirm', 'binding:connection', 'task:read', 'task:assign', 'submission:write', 'result:write', 'notification:deliver', 'baseline:write'] as const;
 export type ServiceCredential = { id: string; token: string; scopes: string[] };
@@ -34,7 +35,8 @@ export async function buildApp(options: AppOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024, ajv: { customOptions: { coerceTypes: false, removeAdditional: false, useDefaults: false } } });
   const db = new Database(options.databasePath ?? ':memory:');
   const auth = new AuthService(db, now);
-  const game = new GameService(db, now, options.providers ?? defaultProviders, options.randomInt ?? randomInt, options.calendar, options.extensions);
+  const social = new SocialService(db, now);
+  const game = new GameService(db, now, options.providers ?? defaultProviders, options.randomInt ?? randomInt, options.calendar, { ...options.extensions, commands: { ...options.extensions?.commands, ...social.commands() } });
   const bindings = new BindingService(db, now, game);
   const health = new HealthBridge(db, now, game, bindings, options.beforeSettlementCommit);
   const outbox = new Outbox(db, now, bindings);
@@ -83,7 +85,41 @@ export async function buildApp(options: AppOptions = {}) {
     validateCommand(input.command, input.payload);
     return success(await game.execute(current.account_id, input.command, input.payload, request.headers['idempotency-key'] as string | undefined));
   });
+  app.post('/api/v2/ptds/confirm', { config: { rateLimit: { max: 12, timeWindow: '1 minute' } }, schema: routeSchema('game', '本人确认今日 PTDS 摘要；仅接收角色和日期', objectSchema({ cultivator_id: stringField, date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } })) }, async request => {
+    const input = request.body as { cultivator_id: string; date: string };
+    return success(health.confirmPtds(session(request).account_id, input.cultivator_id, input.date));
+  });
+
   app.get('/api/v2/snapshot', { schema: routeSchema('game', '当前账号的权威游戏快照') }, async request => success(game.snapshot(session(request).account_id)));
+  app.post('/api/v2/play-days', { schema: routeSchema('game', '记录当前账号的游玩日并返回总数', objectSchema({})) }, async request => {
+    const accountId = session(request).account_id;
+    return success(db.transaction(() => {
+      db.run('INSERT OR IGNORE INTO account_play_days (account_id, day) VALUES (?, ?)', accountId, dayKey(now()));
+      return db.get<{ play_days: number }>('SELECT COUNT(*) AS play_days FROM account_play_days WHERE account_id = ?', accountId)!;
+    }));
+  });
+  const communityCreateInput = objectSchema({ name: { type: 'string', minLength: 2, maxLength: 48 }, visibility: enumField(['public', 'friends', 'private']), max_members: { type: 'integer', minimum: 2, maximum: 200 }, request_id: stringField });
+  const communityIdParams = { params: objectSchema({ id: stringField }) };
+  const postParams = { params: objectSchema({ id: stringField, postId: stringField }) };
+  const requestIdBody = objectSchema({ request_id: stringField });
+  app.get('/api/v2/social/communities', { schema: routeSchema('social', '读取可见社群列表') }, async request => success(social.listCommunities(session(request).account_id)));
+  app.post('/api/v2/social/communities', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } }, schema: routeSchema('social', '创建社群', communityCreateInput) }, async request => { const current = session(request); const body = request.body as { name: string; visibility: 'public' | 'friends' | 'private'; max_members: number; request_id: string }; return success(social.createCommunity(current.account_id, body.name, body.visibility, body.max_members, body.request_id, body)); });
+  app.get('/api/v2/social/communities/:id', { schema: { ...routeSchema('social', '读取社群主页'), ...communityIdParams } }, async request => success(social.feed(session(request).account_id, (request.params as { id: string }).id, 30)));
+  app.get('/api/v2/social/communities/:id/members', { schema: { ...routeSchema('social', '读取社群成员'), ...communityIdParams } }, async request => success({ members: social.members(session(request).account_id, (request.params as { id: string }).id) }));
+  app.get('/api/v2/social/communities/:id/feed', { schema: { ...routeSchema('social', '读取社群动态'), ...communityIdParams, querystring: objectSchema({ limit: { type: 'string', pattern: '^[1-9][0-9]?$', maxLength: 2 } }) } }, async request => success(social.feed(session(request).account_id, (request.params as { id: string }).id, Number((request.query as { limit: string }).limit))));
+  app.post('/api/v2/social/communities/:id/join', { schema: { ...routeSchema('social', '加入公开或熟人社群', requestIdBody), ...communityIdParams } }, async request => { const body = request.body as { request_id: string }; return success(social.joinCommunity(session(request).account_id, (request.params as { id: string }).id, body.request_id, { community_id: (request.params as { id: string }).id, ...body })); });
+  app.post('/api/v2/social/communities/:id/leave', { schema: { ...routeSchema('social', '退出社群', requestIdBody), ...communityIdParams } }, async request => { const body = request.body as { request_id: string }; return success(social.leaveCommunity(session(request).account_id, (request.params as { id: string }).id, body.request_id, { community_id: (request.params as { id: string }).id, ...body })); });
+  app.post('/api/v2/social/communities/:id/posts', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } }, schema: { ...routeSchema('social', '发布社群动态', objectSchema({ body: { type: 'string', minLength: 1, maxLength: 1000 }, request_id: stringField })), ...communityIdParams } }, async request => { const body = request.body as { body: string; request_id: string }; return success(social.createPost(session(request).account_id, (request.params as { id: string }).id, body.body, body.request_id, { community_id: (request.params as { id: string }).id, ...body })); });
+  app.post('/api/v2/social/communities/:id/posts/:postId/comments', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } }, schema: { ...routeSchema('social', '发表评论', objectSchema({ body: { type: 'string', minLength: 1, maxLength: 500 }, request_id: stringField })), ...postParams } }, async request => { const params = request.params as { id: string; postId: string }; const body = request.body as { body: string; request_id: string }; return success(social.createComment(session(request).account_id, params.id, params.postId, body.body, body.request_id, { community_id: params.id, post_id: params.postId, ...body })); });
+  app.post('/api/v2/social/communities/:id/posts/:postId/reactions', { schema: { ...routeSchema('social', '给动态添加互动', objectSchema({ kind: enumField(['like', 'support', 'cheer']), request_id: stringField })), ...postParams } }, async request => { const params = request.params as { id: string; postId: string }; const body = request.body as { kind: 'like' | 'support' | 'cheer'; request_id: string }; return success(social.react(session(request).account_id, params.id, params.postId, body.kind, body.request_id, { community_id: params.id, post_id: params.postId, ...body })); });
+  app.get('/api/v2/social/communities/:id/pvp', { schema: { ...routeSchema('social', '读取社群 PVP 房间'), ...communityIdParams } }, async request => success({ matches: social.matches(session(request).account_id, (request.params as { id: string }).id) }));
+  app.post('/api/v2/social/communities/:id/pvp', { schema: { ...routeSchema('social', '创建 friendly_duel_v1 PVP 房间', objectSchema({ mode: enumField(['friendly_duel_v1']), request_id: stringField })), ...communityIdParams } }, async request => { const params = request.params as { id: string }; const body = request.body as { mode: 'friendly_duel_v1'; request_id: string }; return success(social.createMatch(session(request).account_id, params.id, body.mode, body.request_id, { community_id: params.id, ...body })); });
+  app.post('/api/v2/social/pvp/:matchId/join', { schema: { ...routeSchema('social', '加入社群 PVP 房间', requestIdBody), params: objectSchema({ matchId: stringField }) } }, async request => { const params = request.params as { matchId: string }; const body = request.body as { request_id: string }; return success(social.joinMatch(session(request).account_id, params.matchId, body.request_id, { match_id: params.matchId, ...body })); });
+  app.post('/api/v2/social/pvp/:matchId/finish', { schema: { ...routeSchema('social', '提交 friendly_duel_v1 结束摘要', objectSchema({ snapshot: { type: 'object', additionalProperties: true }, request_id: stringField })), params: objectSchema({ matchId: stringField }) } }, async request => { const params = request.params as { matchId: string }; const body = request.body as { snapshot: Record<string, unknown>; request_id: string }; return success(social.finishMatch(session(request).account_id, params.matchId, body.snapshot, body.request_id, { match_id: params.matchId, ...body })); });
+  app.get('/api/v2/social/world', { schema: { ...routeSchema('social', '读取世界频道和世界 Boss'), querystring: objectSchema({ limit: { type: 'string', pattern: '^[1-9][0-9]?$', maxLength: 2 } }) } }, async request => success(social.worldFeed(session(request).account_id, Number((request.query as { limit: string }).limit))));
+  app.post('/api/v2/social/world/messages', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } }, schema: routeSchema('social', '发布世界频道消息', objectSchema({ body: { type: 'string', minLength: 1, maxLength: 500 }, request_id: stringField })) }, async request => { const body = request.body as { body: string; request_id: string }; return success(social.worldPost(session(request).account_id, body.body, body.request_id, body)); });
+  app.get('/api/v2/social/world/boss', { schema: routeSchema('social', '读取当前世界 Boss 与贡献榜') }, async request => success(social.worldBoss(session(request).account_id)));
+  app.post('/api/v2/social/world/boss/contributions', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } }, schema: routeSchema('social', '提交世界 Boss 协作贡献', objectSchema({ boss_id: stringField, damage: { type: 'integer', minimum: 1, maximum: 5000 }, request_id: stringField })) }, async request => { const body = request.body as { boss_id: string; damage: number; request_id: string }; return success(social.worldBossContribute(session(request).account_id, body.boss_id, body.damage, body.request_id, body)); });
   app.post('/api/v2/realtime/ticket', { schema: routeSchema('realtime', '签发 60 秒有效的一次性连接票据', objectSchema({})) }, async request => success(realtime.ticket(session(request))));
   realtime.register(app, origins);
 
@@ -166,5 +202,5 @@ export async function buildApp(options: AppOptions = {}) {
     worker = setInterval(() => { health.processPending(); realtime.flush(); }, 1000);
     worker.unref();
   }
-  return { app, db, auth, game, bindings, health, outbox, realtime };
+  return { app, db, auth, game, social, bindings, health, outbox, realtime };
 }

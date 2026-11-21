@@ -23,6 +23,7 @@ func _run() -> void:
 	_fixed_progression()
 	_atlas_and_hit_frames()
 	_precision_and_player_chain()
+	_ultimate_system()
 	_stagger_and_lifecycle()
 	_residue_and_minion()
 	_record_isolation()
@@ -222,3 +223,34 @@ func _record_isolation() -> void:
 	restored.load_data(state.to_data())
 	expect(restored.best_boss_record("b06").time==45 and restored.equipment==wallet,"fixed-progression records round-trip without spending resources")
 	expect(battle().state.best_boss_record("b06").is_empty(),"another elder retains separate progression records")
+
+func _ultimate_system() -> void:
+	var rules = battle("b06")
+	var origin: Vector2 = rules.boss_position + Vector2(-110, 0)
+	var basic: Dictionary = rules._resolve_attack(origin)
+	expect(basic.damage > 0 and is_equal_approx(rules.ult_gauge, 8.0), "ordinary blade hit charges eight sword intent")
+	rules.hurt_grace = 0.0
+	rules.shield_time = 2.0
+	rules.shield_hp = 500
+	var before_block: float = rules.ult_gauge
+	var blocked: Dictionary = rules.receive_damage(10)
+	expect(blocked.get("event", "") == "blocked" and is_equal_approx(rules.ult_gauge, before_block + 10.0), "fully absorbed shield hit charges ten sword intent")
+	expect(rules.counter_time > 0.0 and blocked.get("counter", false), "full shield block opens a real counter window")
+	rules.hurt_grace = 0.0
+	rules.dodge_time = .30
+	rules.precision_spent = false
+	var evade: Dictionary = rules.receive_damage(10)
+	expect(evade.get("event", "") == "perfect_evade" and is_equal_approx(rules.ult_gauge, before_block + 30.0), "perfect dodge charges twenty sword intent")
+	rules.ult_gauge = Boss.ULT_MAX
+	var activated: Dictionary = rules.ultimate(origin, Vector2.RIGHT)
+	expect(activated.get("ok", false) and rules.ult_active and rules.ult_gauge == 0.0, "full sword intent activates ultimate and spends the gauge")
+	var hp_before: int = rules.boss_hp
+	var first: Array = rules._step_player_action(.19, origin)
+	var second: Array = rules._step_player_action(.29, origin)
+	var third: Array = rules._step_player_action(.31, origin)
+	expect(first.size() == 1 and second.size() == 1 and third.size() == 1, "ultimate resolves three separately timed waves")
+	expect(first[0].kind == "ultimate" and int(first[0].result.ult_wave) == 0 and int(third[0].result.ult_wave) == 2, "ultimate events expose their wave for visual and audio feedback")
+	expect(rules.boss_hp < hp_before and rules.ult_hits == 3, "all three ultimate waves really hit and damage the boss")
+	expect(rules.ult_gauge == 0.0, "ultimate hits never recharge their own gauge")
+	rules._step_player_action(.30, origin)
+	expect(not rules.ult_active and not rules.ultimate(origin, Vector2.RIGHT).get("ok", false), "ultimate ends cleanly and cannot be recast without new charge")

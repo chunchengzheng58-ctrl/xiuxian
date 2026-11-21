@@ -9,6 +9,8 @@ var progression: Dictionary
 var combo_index: int = 0
 var combo_total: int = 1
 var pending_stagger: bool = false
+var rage_time: float = 0.0
+var provoked_next: bool = false
 var hazards: Array = []
 var player_velocity = Vector2.ZERO
 var _last_player = Vector2.INF
@@ -66,11 +68,23 @@ func clear_attack() -> void:
 func progress() -> float:
 	return clampf(phase_clock / maxf(phase_duration, .001), 0, 1)
 
+## 激怒只压缩出手前等待；真正的攻击仍由 _begin 生成完整原招式预警。
+func provoke() -> bool:
+	if phase not in ["waiting", "breath"] or rage_time > 0.0:
+		return false
+	rage_time = 2.4
+	provoked_next = true
+	phase = "waiting"
+	phase_clock = 0.0
+	phase_duration = .48
+	return true
+
 func raw_damage() -> int:
 	return mini(int(CONFIG.data.max_raw_damage), roundi((float(definition.base_attack)) * float(move.get("power", 1)) * (1 + int(move.get("attack_stage",stage)) * .08)))
 
 func step(delta: float, player: Vector2) -> Array:
 	var events: Array = []
+	rage_time = maxf(0.0, rage_time - delta)
 	if _last_player.is_finite():
 		player_velocity = player_velocity.lerp(((player-_last_player)/delta).limit_length(255), .22)
 	_last_player = player
@@ -192,6 +206,9 @@ func _begin(player: Vector2, linked: bool = false) -> void:
 		combo_index = 0
 		combo_total = int(progression.combo[stage])
 	move = chosen.duplicate(true)
+	if provoked_next:
+		move["provoked"] = true
+		provoked_next = false
 	move["attack_stage"] = stage
 	move["waves"] = int(progression.waves[stage]) if move.kind == "volley" else 1
 	_last_used[move.id] = attack_number

@@ -89,7 +89,7 @@
   "chapters": [
     {
       "id": "origin",
-      "title": "照生乡 · 试灯",
+      "title": "离乡前",
       "region": "序章",
       "stage_ids": [
         "b00"
@@ -103,23 +103,40 @@
       "nodes": [
         {
           "id": "origin.intro",
-          "title": "听取线索",
+          "title": "离乡前·起",
           "kind": "intro",
           "dialogue": [
             {
               "speaker": "雷叔",
-              "text": "先看清，再出手。听雷守着旧灯座，愿意陪你练习辨认地面的雷纹。"
+              "text": "外头冷，茶喝了再走。"
+            },
+            {
+              "speaker": "母亲",
+              "text": "干粮分了两包。蓝绳路上吃，红绳回家吃。",
+              "art": "rations"
+            },
+            {
+              "speaker": "主角",
+              "text": "嗯。"
             }
           ]
         },
         {
           "id": "origin.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "离乡前·收",
           "kind": "closure",
           "dialogue": [
             {
               "speaker": "雷叔",
-              "text": "灯芯再次亮起。照生乡记得你看清征兆后迈出的第一步。"
+              "text": "旧灯你拿去。用不着替我擦。"
+            },
+            {
+              "speaker": "母亲",
+              "text": "到了，写个到字就行。"
+            },
+            {
+              "speaker": "主角",
+              "text": "好。"
             }
           ]
         }
@@ -127,7 +144,7 @@
     },
     {
       "id": "wood",
-      "title": "苍梧林 · 木心有界",
+      "title": "新绳与旧树",
       "region": "木",
       "stage_ids": [
         "b01",
@@ -143,23 +160,40 @@
       "nodes": [
         {
           "id": "wood.intro",
-          "title": "听取线索",
+          "title": "新绳与旧树·起",
           "kind": "intro",
           "dialogue": [
             {
               "speaker": "阿禾",
-              "text": "我沿三枚铜铃找到问春祠。先到悬木栈道看旧图，再去百工坊卸开锁结，最后让白鹿背上的木心停下借根夺灵。"
+              "text": "栈道上的新绳，是阿宁系的。"
+            },
+            {
+              "speaker": "主角",
+              "text": "她先走了？"
+            },
+            {
+              "speaker": "阿宁留言",
+              "text": "不照生。别耽搁。",
+              "art": "map"
             }
           ]
         },
         {
           "id": "wood.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "新绳与旧树·收",
           "kind": "closure",
           "dialogue": [
             {
               "speaker": "阿禾",
-              "text": "青木匣收住木心，铜铃各自随风鸣响。我会把小苗种在祠旁，让每一株都能独自生长。"
+              "text": "新芽和旧树，分开种了。"
+            },
+            {
+              "speaker": "主角",
+              "text": "能看见水。"
+            },
+            {
+              "speaker": "阿禾",
+              "text": "嗯。慢慢长。"
             }
           ]
         }
@@ -167,7 +201,7 @@
     },
     {
       "id": "fire",
-      "title": "丹霞岭 · 余火有度",
+      "title": "两份干粮",
       "region": "火",
       "stage_ids": [
         "b04",
@@ -183,23 +217,40 @@
       "nodes": [
         {
           "id": "fire.intro",
-          "title": "听取线索",
+          "title": "两份干粮·起",
           "kind": "intro",
           "dialogue": [
             {
-              "speaker": "陶伯",
-              "text": "鼓楼的回声淹没了报时，引火廊也被落石收窄。先找回清楚的节拍，再为赤石桥留下散热的通路。"
+              "speaker": "刘婶",
+              "text": "双份干粮，阿宁带走一份。",
+              "art": "rations"
+            },
+            {
+              "speaker": "主角",
+              "text": "哪边？"
+            },
+            {
+              "speaker": "刘婶",
+              "text": "热的那边。她胃不好。"
             }
           ]
         },
         {
           "id": "fire.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "两份干粮·收",
           "kind": "closure",
           "dialogue": [
             {
-              "speaker": "陶伯",
-              "text": "找回的铁铃让赤棘伏入浅水。桥头第一批粗陶碗出窑，灯廊终于可以停下，也可以接续。"
+              "speaker": "烬婶",
+              "text": "炉火小些了。"
+            },
+            {
+              "speaker": "主角",
+              "text": "她吃药了？"
+            },
+            {
+              "speaker": "烬婶",
+              "text": "嗯。苦也没放下。"
             }
           ]
         }
@@ -207,7 +258,7 @@
     },
     {
       "id": "earth",
-      "title": "稷野 · 四渠同明",
+      "title": "断墙留土",
       "region": "土",
       "stage_ids": [
         "b07",
@@ -223,23 +274,39 @@
       "nodes": [
         {
           "id": "earth.intro",
-          "title": "听取线索",
+          "title": "断墙留土·起",
           "kind": "intro",
           "dialogue": [
             {
-              "speaker": "禾生",
-              "text": "入仓的数目都对，西头田灯却仍然黑着。请陪我看璧渠的积层，点亮丹灯驿，沿四渠寻找没有送到的光。"
+              "speaker": "石翁",
+              "text": "她补了豁口。"
+            },
+            {
+              "speaker": "主角",
+              "text": "东墙？"
+            },
+            {
+              "speaker": "石翁",
+              "text": "嗯。饭凉了也没顾上。"
             }
           ]
         },
         {
           "id": "earth.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "断墙留土·收",
           "kind": "closure",
           "dialogue": [
             {
-              "speaker": "禾生",
-              "text": "第一道归来的光点亮最小的田灯。我会把出仓去向也记进账册，公仓从此成为共享谷亭。"
+              "speaker": "石翁",
+              "text": "墙会再旧。"
+            },
+            {
+              "speaker": "主角",
+              "text": "知道。"
+            },
+            {
+              "speaker": "石翁",
+              "text": "吃饭要趁热。"
             }
           ]
         }
@@ -247,7 +314,7 @@
     },
     {
       "id": "metal",
-      "title": "白羽关 · 风信重开",
+      "title": "风会回信",
       "region": "金",
       "stage_ids": [
         "b10",
@@ -263,23 +330,40 @@
       "nodes": [
         {
           "id": "metal.intro",
-          "title": "听取线索",
+          "title": "风会回信·起",
           "kind": "intro",
           "dialogue": [
             {
               "speaker": "素娘",
-              "text": "风道里塞进了太多机关，暖羽驿也被热雾封住。这些家书不该继续等，我们先给山风留一条路。"
+              "text": "有封回信，落了一站。",
+              "art": "letter"
+            },
+            {
+              "speaker": "主角",
+              "text": "什么时候的？"
+            },
+            {
+              "speaker": "素娘",
+              "text": "很久了。你去候风亭看看。"
             }
           ]
         },
         {
           "id": "metal.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "风会回信·收",
           "kind": "closure",
           "dialogue": [
             {
               "speaker": "素娘",
-              "text": "玉环归正，竹叶翻面。第一封家书沿风路送出，候风亭终于又能等到远行的人。"
+              "text": "信送回去了。"
+            },
+            {
+              "speaker": "主角",
+              "text": "嗯。"
+            },
+            {
+              "speaker": "素娘",
+              "text": "这回，别等了。"
             }
           ]
         }
@@ -287,7 +371,7 @@
     },
     {
       "id": "water",
-      "title": "玄泽 · 支流相续",
+      "title": "渡口灯亮",
       "region": "水",
       "stage_ids": [
         "b13",
@@ -303,23 +387,41 @@
       "nodes": [
         {
           "id": "water.intro",
-          "title": "听取线索",
+          "title": "渡口灯亮·起",
           "kind": "intro",
           "dialogue": [
             {
               "speaker": "汀兰",
-              "text": "泉碑与巡河册留下了不同日期的刻度。看清内外两池的砂，再让双轮交替，最后沿三碑峡依次开闸。"
+              "text": "她的药包挂着。",
+              "art": "lamp"
+            },
+            {
+              "speaker": "主角",
+              "text": "伤怎么样？"
+            },
+            {
+              "speaker": "汀兰",
+              "text": "不肯说。"
             }
           ]
         },
         {
           "id": "water.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "渡口灯亮·收",
           "kind": "closure",
           "dialogue": [
             {
               "speaker": "汀兰",
-              "text": "三渠复通，渡口重开。巡河亭会继续保留量水碑，后来的人也能循着日期和刻度看见变化。"
+              "text": "船又回来了。",
+              "art": "boat"
+            },
+            {
+              "speaker": "主角",
+              "text": "嗯。"
+            },
+            {
+              "speaker": "汀兰",
+              "text": "沿灯走，就到村。"
             }
           ]
         }
@@ -327,7 +429,7 @@
     },
     {
       "id": "side",
-      "title": "乡中旁篇 · 灯与旧事",
+      "title": "先回的人",
       "region": "旁篇",
       "stage_ids": [
         "b16",
@@ -342,23 +444,40 @@
       "nodes": [
         {
           "id": "side.intro",
-          "title": "听取线索",
+          "title": "先回的人·起",
           "kind": "intro",
           "dialogue": [
             {
-              "speaker": "阿更",
-              "text": "有一域亮起灯后，也回来看看乡里。更漏台还绕着同一圈巡路，藏书楼的熟悉物件也等人摆回原处。"
+              "speaker": "阿宁",
+              "text": "我没等你。"
+            },
+            {
+              "speaker": "主角",
+              "text": "嗯。"
+            },
+            {
+              "speaker": "阿宁",
+              "text": "面呢？"
             }
           ]
         },
         {
           "id": "side.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "先回的人·收",
           "kind": "closure",
           "dialogue": [
             {
-              "speaker": "阿更",
-              "text": "多余灯光熄了，下一班有人接手。窗边的椅子摆好了，大家坐下来，听抄书人愿意讲的那一段。"
+              "speaker": "阿宁",
+              "text": "地图画完了。",
+              "art": "map"
+            },
+            {
+              "speaker": "主角",
+              "text": "差一站。"
+            },
+            {
+              "speaker": "阿宁",
+              "text": "留着。"
             }
           ]
         }
@@ -366,7 +485,7 @@
     },
     {
       "id": "echo",
-      "title": "相痕海 · 共守回声",
+      "title": "不必解释",
       "region": "共域",
       "stage_ids": [
         "b18"
@@ -380,23 +499,39 @@
       "nodes": [
         {
           "id": "echo.intro",
-          "title": "听取线索",
+          "title": "不必解释·起",
           "kind": "intro",
           "dialogue": [
             {
-              "speaker": "雷叔",
-              "text": "五坛归位，旧阵的相痕在水镜里聚成晦龙。带着五枚归衡印去共守台，看一看一路修好的灯、桥与风亭。"
+              "speaker": "阿禾",
+              "text": "栈道上，有人先到了。"
+            },
+            {
+              "speaker": "阿宁",
+              "text": "听见回声了？"
+            },
+            {
+              "speaker": "主角",
+              "text": "没有。"
             }
           ]
         },
         {
           "id": "echo.closure",
-          "title": "归衡 · 领取章节奖励",
+          "title": "不必解释·收",
           "kind": "closure",
           "dialogue": [
             {
-              "speaker": "雷叔",
-              "text": "晦鳞退去墨色，海面映出五域归处。剩下的路通向常生台，那里的天仪还困在恒常如一的旧命令里。"
+              "speaker": "阿宁",
+              "text": "先回吧。"
+            },
+            {
+              "speaker": "主角",
+              "text": "不去了？"
+            },
+            {
+              "speaker": "阿宁",
+              "text": "她认得路。"
             }
           ]
         }
@@ -404,7 +539,7 @@
     },
     {
       "id": "finale",
-      "title": "常生台 · 万物各时",
+      "title": "常生无常",
       "region": "终章",
       "stage_ids": [
         "b19"
@@ -418,23 +553,48 @@
       "nodes": [
         {
           "id": "finale.intro",
-          "title": "听取线索",
+          "title": "常生无常·起",
           "kind": "intro",
           "dialogue": [
             {
-              "speaker": "青松旧札",
-              "text": "照地，照时，照人。带着五印与沿途见过的不同节奏，重启五方，让执衡重新读懂被长夜震散的条款。"
+              "speaker": "执衡",
+              "text": "恒常。",
+              "art": "chess"
+            },
+            {
+              "speaker": "阿宁",
+              "text": "他在等你。"
+            },
+            {
+              "speaker": "主角",
+              "text": "我知道。"
             }
           ]
         },
         {
           "id": "finale.closure",
-          "title": "归来 · 领取终章奖励",
+          "title": "常生无常·收",
           "kind": "closure",
           "dialogue": [
             {
-              "speaker": "青松旧札",
-              "text": "常生仪拆成五座小台，由各地共同照看。五域重新有了四季与变化，每盏灯都能按自己的节奏明灭。守灯者，欢迎回家。"
+              "speaker": "执衡",
+              "text": "哦。",
+              "art": "chess"
+            },
+            {
+              "speaker": "母亲",
+              "text": "回来了？",
+              "art": "home"
+            },
+            {
+              "speaker": "主角",
+              "text": "嗯。",
+              "art": "home"
+            },
+            {
+              "speaker": "母亲",
+              "text": "锅里还有。",
+              "art": "noodles"
             }
           ]
         }
@@ -451,9 +611,9 @@
       "chapter_id": "origin",
       "optional": true,
       "recommendation": "可选教学 · 练习读兆与护盾",
-      "story": "雷叔摇响旧灯座的铜铃，小雷兽用两道不同的雷光考一考守灯者。",
+      "story": "旧灯座上多了一只蜷起的雷兽；临行前，雷叔只让你先看一眼。",
       "tactics": "先看第一圈雷纹，站在内圈或环外；再避开中心回雷。",
-      "world_change": "试灯纪事：照生乡的旧灯座重新亮起，辨认雷纹的经历留在守灯者的行旅中。",
+      "world_change": "干粮拿了吗？",
       "requires": {
         "all_clears": [],
         "any_clears": []
@@ -474,6 +634,56 @@
       "battle": {
         "life": 150,
         "attack": 10
+      },
+      "prelude": [
+        {
+          "speaker": "雷叔",
+          "text": "别急着拔剑。"
+        },
+        {
+          "speaker": "主角",
+          "text": "铃怎么不响？"
+        },
+        {
+          "speaker": "雷叔",
+          "text": "灯芯沾灰了。听雷守的是旧灯，不是山路。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "雷叔",
+          "text": "看清再动。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "听雷",
+          "text": "……",
+          "art": "lamp"
+        },
+        {
+          "speaker": "雷叔",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "母亲",
+          "text": "干粮拿了吗？",
+          "art": "rations"
+        },
+        {
+          "speaker": "主角",
+          "text": "拿了。"
+        }
+      ],
+      "entrance": {
+        "style": "lamp",
+        "line": "叮。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "叮。",
+        "phase": "铃还没响。",
+        "low_hp": "灯要稳。",
+        "defeat": "……"
       }
     },
     {
@@ -485,9 +695,9 @@
       "chapter_id": "wood",
       "optional": false,
       "recommendation": "初入秘境 · 无装备亦可挑战",
-      "story": "阿禾翻出旧检修图，完好的桥皮下面，两侧承重梁已经被压出了空腔。",
+      "story": "栈道新绳底下压着旧刻刀；朽梁把重量都留给了最薄的桥板。",
       "tactics": "两侧横梁会留下裂痕，先走中间完好的桥板，再避开纵梁。",
-      "world_change": "归衡纪事：悬木栈道得到支撑，师傅把逐梁检修图重新挂在入口。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [],
         "any_clears": []
@@ -508,6 +718,49 @@
       "battle": {
         "life": 200,
         "attack": 14
+      },
+      "prelude": [
+        {
+          "speaker": "阿禾",
+          "text": "桥又响。"
+        },
+        {
+          "speaker": "主角",
+          "text": "绳结是新的。"
+        },
+        {
+          "speaker": "阿禾",
+          "text": "她系的。刻刀压在下面。",
+          "art": "marks"
+        },
+        {
+          "speaker": "阿禾",
+          "text": "朽梁拖着旧桥，走不得了。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "朽梁",
+          "text": "还重。",
+          "art": "marks"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "阿禾",
+          "text": "她留的图，能用了。",
+          "art": "map"
+        }
+      ],
+      "entrance": {
+        "style": "marks",
+        "line": "桥板先响。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "桥板先响。"
       }
     },
     {
@@ -519,9 +772,9 @@
       "chapter_id": "wood",
       "optional": false,
       "recommendation": "强化武器与护甲，留意地面预兆",
-      "story": "学徒给涩节不断加重配铁，转轴卡死后，每一轮启动都要扣住相邻的机关。",
+      "story": "百工坊的机关卡住旧绳节；涩节仍在替一尊石像继续发力。",
       "tactics": "先躲横向扣轴，再离开回弹区。灵力被扣时，靠普攻回补。",
-      "world_change": "归衡纪事：百工坊卸开锁结，机关兽安置在新支架上，不同机关开始分担工作。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [
           "b01"
@@ -544,6 +797,44 @@
       "battle": {
         "life": 340,
         "attack": 20
+      },
+      "prelude": [
+        {
+          "speaker": "木匠",
+          "text": "涩节不肯松。"
+        },
+        {
+          "speaker": "主角",
+          "text": "绳节旧了。"
+        },
+        {
+          "speaker": "木匠",
+          "text": "他爹刻了一半。后来，机关替他使劲。",
+          "art": "marks"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "木匠",
+          "text": "一截木料。",
+          "art": "marks"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "木匠",
+          "text": "刻刀收着。"
+        }
+      ],
+      "entrance": {
+        "style": "marks",
+        "line": "转轴咬住旧绳。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "转轴咬住旧绳。"
       }
     },
     {
@@ -555,9 +846,9 @@
       "chapter_id": "wood",
       "optional": false,
       "recommendation": "强化武器与护甲，留意地面预兆",
-      "story": "白鹿曾替老树引出新芽，青木坛断纹后却再也听不到停止的回声。祠中繁花不谢，山下杏林不再发芽。阿禾沿三枚始终朝树身靠拢的铜铃找到侵脉根。玩家要辨出侵占连接，保留活着的新芽与乡人旧物。木心封入青木匣后，铜铃重新随风各鸣，阿禾在祠旁种下独立的小苗。",
+      "story": "问春祠的老树停下新芽；树身上留着两个不同身高的刻痕。",
       "tactics": "靠近三个根瘤按 E 断连；连接越少，敌人的护障越弱。",
-      "world_change": "青木坛恢复边界；木行归衡印已记录在正式冒险进度中。",
+      "world_change": "我在前面。不用追。",
       "requires": {
         "all_clears": [
           "b02"
@@ -580,6 +871,58 @@
       "battle": {
         "life": 520,
         "attack": 26
+      },
+      "prelude": [
+        {
+          "speaker": "阿禾",
+          "text": "老树不发芽了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "这里有刻痕。",
+          "art": "tree_marks"
+        },
+        {
+          "speaker": "阿禾",
+          "text": "你爹的手稳。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。",
+          "art": "tree_marks"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "窃荣",
+          "text": "还长。",
+          "art": "tree_marks"
+        },
+        {
+          "speaker": "阿禾",
+          "text": "新芽离了老树，也能活。"
+        },
+        {
+          "speaker": "阿宁留言",
+          "text": "我在前面。不用追。",
+          "art": "map"
+        },
+        {
+          "speaker": "主角",
+          "text": "……",
+          "art": "map"
+        }
+      ],
+      "entrance": {
+        "style": "tree_marks",
+        "line": "先顾新芽。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "先顾新芽。",
+        "phase": "根还连着。",
+        "low_hp": "……",
+        "defeat": "还长。"
       }
     },
     {
@@ -591,9 +934,9 @@
       "chapter_id": "fire",
       "optional": false,
       "recommendation": "历练等级 4 · 可强化装备后重试",
-      "story": "陶伯听见铜蝉腹中的三面鼓各抢一拍，原本给山里报时的声音开始错开。",
+      "story": "火坪边缘留着一枚药袋；烬疫把渡人的炉火聚在自己身上。",
       "tactics": "近声和远声的间隔不同，看每一道地面预警来闪。",
-      "world_change": "归衡纪事：回声不再抢拍，丹霞岭的鼓楼重新按自己的节奏报时。",
+      "world_change": "药苦。",
       "requires": {
         "all_clears": [
           "b03"
@@ -616,6 +959,44 @@
       "battle": {
         "life": 1800,
         "attack": 25
+      },
+      "prelude": [
+        {
+          "speaker": "刘婶",
+          "text": "火越烧越急。"
+        },
+        {
+          "speaker": "主角",
+          "text": "袋上有针脚。",
+          "art": "rations"
+        },
+        {
+          "speaker": "刘婶",
+          "text": "她拿了药。你娘分装了两份。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "烬疫",
+          "text": "还热。",
+          "art": "rations"
+        },
+        {
+          "speaker": "刘婶",
+          "text": "药苦。"
+        },
+        {
+          "speaker": "主角",
+          "text": "她吃了。"
+        }
+      ],
+      "entrance": {
+        "style": "rations",
+        "line": "火口先退一步。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "火口先退一步。"
       }
     },
     {
@@ -627,9 +1008,9 @@
       "chapter_id": "fire",
       "optional": false,
       "recommendation": "历练等级 5 · 可强化装备后重试",
-      "story": "陶伯见窄焰一催炉就有灯台失火，便沿旧灯线指出还能换道的上下支廊。",
+      "story": "裂口旁落着一只沾灰的馒头；膨火抱得太紧，把自己也烧疼了。",
       "tactics": "上廊亮时走下路，听见换廊声就转上路，别停在两廊交界。",
-      "world_change": "归衡纪事：引火廊修复，灯火沿支廊分批接续，作坊留下可停可续的余地。",
+      "world_change": "灰里有馒头。",
       "requires": {
         "all_clears": [
           "b04"
@@ -652,6 +1033,48 @@
       "battle": {
         "life": 2200,
         "attack": 27
+      },
+      "prelude": [
+        {
+          "speaker": "铁头",
+          "text": "裂口还涨。"
+        },
+        {
+          "speaker": "主角",
+          "text": "有馒头。",
+          "art": "rations"
+        },
+        {
+          "speaker": "铁头",
+          "text": "她落下的。"
+        },
+        {
+          "speaker": "铁头",
+          "text": "膨火抱得越紧，烧得越疼。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "膨火",
+          "text": "还饿。",
+          "art": "rations"
+        },
+        {
+          "speaker": "铁头",
+          "text": "灰里有馒头。"
+        },
+        {
+          "speaker": "主角",
+          "text": "……拍一拍。"
+        }
+      ],
+      "entrance": {
+        "style": "rations",
+        "line": "别把火喂得太急。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "别把火喂得太急。"
       }
     },
     {
@@ -663,9 +1086,9 @@
       "chapter_id": "fire",
       "optional": false,
       "recommendation": "历练等级 6 · 可强化装备后重试",
-      "story": "赤棘仍替旧窑挡风，封住散热槽的赤晶却被它震进了桥面。",
+      "story": "炉前刻着浅浅的日期；烬婶借炉火回来的那一天，一直没走完。",
       "tactics": "晶簇落地后会沿横线互相引爆，先退出两簇之间的桥面。",
-      "world_change": "赤石桥的晶簇散去；火行归衡印已记录在正式冒险进度中。",
+      "world_change": "面要凉了。",
       "requires": {
         "all_clears": [
           "b05"
@@ -688,6 +1111,45 @@
       "battle": {
         "life": 2600,
         "attack": 28
+      },
+      "prelude": [
+        {
+          "speaker": "刘婶",
+          "text": "炉前刻着日子。",
+          "art": "marks"
+        },
+        {
+          "speaker": "主角",
+          "text": "是今天？"
+        },
+        {
+          "speaker": "刘婶",
+          "text": "她借炉回来，只想把这一天过完。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "烬婶",
+          "text": "还赶得上。",
+          "art": "rations"
+        },
+        {
+          "speaker": "主角",
+          "text": "面要凉了。",
+          "art": "noodles"
+        },
+        {
+          "speaker": "刘婶",
+          "text": "这句……她没说。"
+        }
+      ],
+      "entrance": {
+        "style": "rations",
+        "line": "火还旺，日子却停了。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "火还旺，日子却停了。"
       }
     },
     {
@@ -699,9 +1161,9 @@
       "chapter_id": "earth",
       "optional": false,
       "recommendation": "历练等级 7 · 可强化装备后重试",
-      "story": "禾生发现末端田灯渐暗，而积璧仍把每一层错叠的璧片当成修补。",
+      "story": "夯土台上的刻刀修过东墙；滞垒把旧城全抱在自己身上。",
       "tactics": "看清逐层亮起的璧壳，先留在两层之间，收壳后近身。",
-      "world_change": "归衡纪事：璧渠的错层清除，末端田埂重新迎来灯光。",
+      "world_change": "刀旧。",
       "requires": {
         "all_clears": [
           "b06"
@@ -724,6 +1186,44 @@
       "battle": {
         "life": 2900,
         "attack": 29
+      },
+      "prelude": [
+        {
+          "speaker": "石翁",
+          "text": "台基下沉。"
+        },
+        {
+          "speaker": "主角",
+          "text": "刻刀修过墙。",
+          "art": "marks"
+        },
+        {
+          "speaker": "石翁",
+          "text": "他补了东墙。滞垒把旧城全背上了。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "滞垒",
+          "text": "还站。",
+          "art": "marks"
+        },
+        {
+          "speaker": "石翁",
+          "text": "刀旧。"
+        },
+        {
+          "speaker": "主角",
+          "text": "能用。"
+        }
+      ],
+      "entrance": {
+        "style": "marks",
+        "line": "先看墙脚。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "先看墙脚。"
       }
     },
     {
@@ -735,9 +1235,9 @@
       "chapter_id": "earth",
       "optional": false,
       "recommendation": "历练等级 8 · 可强化装备后重试",
-      "story": "薄丹把备用灯全挂在翅上，每次扇翅送出余光，自己便在驿路旁停歇。",
+      "story": "梯田梗上留着整齐的绳结；田心不让水退，也不让自己歇。",
       "tactics": "暗灯扑灭会消耗体力，先走出落点，保留一次踏云。",
-      "world_change": "归衡纪事：关键转弯都有路灯，薄丹只带着自己的那一盏，夜行的人有了清楚的路标。",
+      "world_change": "歇埂了。",
       "requires": {
         "all_clears": [
           "b07"
@@ -760,6 +1260,44 @@
       "battle": {
         "life": 3300,
         "attack": 31
+      },
+      "prelude": [
+        {
+          "speaker": "田婆",
+          "text": "田埂全鼓了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "绳结还整齐。",
+          "art": "marks"
+        },
+        {
+          "speaker": "田婆",
+          "text": "阿宁歇过。田心不肯。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "田心",
+          "text": "还长。",
+          "art": "marks"
+        },
+        {
+          "speaker": "田婆",
+          "text": "歇埂了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "她补的那格，也空着。"
+        }
+      ],
+      "entrance": {
+        "style": "marks",
+        "line": "田要轮作，人也一样。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "田要轮作，人也一样。"
       }
     },
     {
@@ -771,9 +1309,9 @@
       "chapter_id": "earth",
       "optional": false,
       "recommendation": "历练等级 9 · 可强化装备后重试",
-      "story": "失稷把灵谷全攒在背仓，禾生循陶渠一路查到回流的谷灯。",
+      "story": "古钟里留着一件旧衣；磐首不敢让钟声停，便把自己敲聋了。",
       "tactics": "四渠分两批泄流，沿斜角换边，别停在下一批亮起的交口。",
-      "world_change": "四渠复通，公仓改为共享谷亭；土行归衡印已记录在正式冒险进度中。",
+      "world_change": "钟架空一格。",
       "requires": {
         "all_clears": [
           "b08"
@@ -796,6 +1334,44 @@
       "battle": {
         "life": 3700,
         "attack": 32
+      },
+      "prelude": [
+        {
+          "speaker": "石翁",
+          "text": "钟里有人声。"
+        },
+        {
+          "speaker": "主角",
+          "text": "像缝衣。"
+        },
+        {
+          "speaker": "石翁",
+          "text": "她娘年年等。后来钟替人响。",
+          "art": "rations"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "磐首",
+          "text": "还响。",
+          "art": "rations"
+        },
+        {
+          "speaker": "石翁",
+          "text": "钟架空一格。"
+        },
+        {
+          "speaker": "主角",
+          "text": "留着。"
+        }
+      ],
+      "entrance": {
+        "style": "rations",
+        "line": "钟声太满，先听停顿。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "钟声太满，先听停顿。"
       }
     },
     {
@@ -807,9 +1383,9 @@
       "chapter_id": "metal",
       "optional": false,
       "recommendation": "历练等级 11 · 可强化装备后重试",
-      "story": "素娘在铸风坊旧图里发现，闭岚加装的两侧风车挤掉了送风主道。",
+      "story": "石台的刀柄缠过新布；切锋不许任何东西变钝，包括握刀的人。",
       "tactics": "走明亮的中央风道，两侧封风会持续一阵，后段从中间风闸的两侧绕过。",
-      "world_change": "归衡纪事：铸风坊拆去堵路的多余机关，给山风留出能够持续维护的主通路。",
+      "world_change": "针脚比刀口细。",
       "requires": {
         "all_clears": [
           "b09"
@@ -832,6 +1408,44 @@
       "battle": {
         "life": 4200,
         "attack": 34
+      },
+      "prelude": [
+        {
+          "speaker": "素娘",
+          "text": "石台太利。"
+        },
+        {
+          "speaker": "主角",
+          "text": "布上有针脚。",
+          "art": "rations"
+        },
+        {
+          "speaker": "素娘",
+          "text": "她娘缝的。切锋连刀柄也不许旧。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "切锋",
+          "text": "还利。",
+          "art": "rations"
+        },
+        {
+          "speaker": "素娘",
+          "text": "针脚比刀口细。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        }
+      ],
+      "entrance": {
+        "style": "rations",
+        "line": "锋口亮时先让一步。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "锋口亮时先让一步。"
       }
     },
     {
@@ -843,9 +1457,9 @@
       "chapter_id": "metal",
       "optional": false,
       "recommendation": "历练等级 12 · 可强化装备后重试",
-      "story": "暖炉错位，灼羽每次折返都把余烬带回暖羽驿，驿主只得举灯为旅人引路。",
+      "story": "角楼的新绳结没有多余一圈；锢羽把最后一次起飞拉成了悬停。",
       "tactics": "两次归巢沿交叉斜线掠过，换边后别踏回亮起的折返线。",
-      "world_change": "归衡纪事：暖羽驿的散雾口封住，院落重新成为旅人歇脚的地方。",
+      "world_change": "你认识？",
       "requires": {
         "all_clears": [
           "b10"
@@ -868,6 +1482,48 @@
       "battle": {
         "life": 4600,
         "attack": 35
+      },
+      "prelude": [
+        {
+          "speaker": "素娘",
+          "text": "角楼落不下。"
+        },
+        {
+          "speaker": "主角",
+          "text": "是她。",
+          "art": "marks"
+        },
+        {
+          "speaker": "素娘",
+          "text": "她把绳留给你。锢羽把起飞留给了昨天。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "锢羽",
+          "text": "还飞。",
+          "art": "marks"
+        },
+        {
+          "speaker": "主角",
+          "text": "她会系这个。"
+        },
+        {
+          "speaker": "素娘",
+          "text": "你认识？"
+        },
+        {
+          "speaker": "主角",
+          "text": "……嗯。"
+        }
+      ],
+      "entrance": {
+        "style": "marks",
+        "line": "羽门合上前别抢。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "羽门合上前别抢。"
       }
     },
     {
@@ -879,9 +1535,9 @@
       "chapter_id": "metal",
       "optional": false,
       "recommendation": "历练等级 13 · 可强化装备后重试",
-      "story": "白羽坛的玉环错了位，铜羽鹤合翼时把山风卷回胸前，展开时又把归信吹散。",
+      "story": "候风亭压着一封寄不出去的家书；缄风只肯重复最后那一句话。",
       "tactics": "吸风出现时横移出扇面，蓄力别贴在鹤正前方；吹飞落地后再找收招窗口。",
-      "world_change": "山口信路重开，第一封家书沿风而去；金行归衡印已记录在正式冒险进度中。",
+      "world_change": "信寄回去了。",
       "requires": {
         "all_clears": [
           "b11"
@@ -904,6 +1560,60 @@
       "battle": {
         "life": 5100,
         "attack": 36
+      },
+      "prelude": [
+        {
+          "speaker": "素娘",
+          "text": "风把信截住了。",
+          "art": "letter"
+        },
+        {
+          "speaker": "主角",
+          "text": "哪封？",
+          "art": "letter"
+        },
+        {
+          "speaker": "素娘",
+          "text": "你爹写回家的。",
+          "art": "letter"
+        },
+        {
+          "speaker": "缄风",
+          "text": "等——",
+          "art": "letter"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "缄风",
+          "text": "……",
+          "art": "letter"
+        },
+        {
+          "speaker": "主角",
+          "text": "按时吃饭。",
+          "art": "letter_changed"
+        },
+        {
+          "speaker": "素娘",
+          "text": "信寄回去了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。",
+          "art": "letter_changed"
+        }
+      ],
+      "entrance": {
+        "style": "letter",
+        "line": "等——",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "等——",
+        "phase": "风不回。",
+        "low_hp": "……",
+        "defeat": "……"
       }
     },
     {
@@ -915,9 +1625,9 @@
       "chapter_id": "water",
       "optional": false,
       "recommendation": "历练等级 14 · 可强化装备后重试",
-      "story": "汀兰翻出三份泉碑旧记，才看出沉砂把浑水一次次蓄在蚌壳里。",
+      "story": "灯下行囊放着伤药；蚀涟把渡船的入口咬在了自己嘴里。",
       "tactics": "砂圈落地会留下泥池，往空地转移，留一条路回到 Boss 身边。",
-      "world_change": "归衡纪事：澄砂泉恢复清亮，乡人约定轮换检修，泉碑继续记下每次变化。",
+      "world_change": "灯挑高了。",
       "requires": {
         "all_clears": [
           "b12"
@@ -940,6 +1650,44 @@
       "battle": {
         "life": 5500,
         "attack": 38
+      },
+      "prelude": [
+        {
+          "speaker": "汀兰",
+          "text": "渡口起雾。"
+        },
+        {
+          "speaker": "主角",
+          "text": "药包是她的。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "汀兰",
+          "text": "她去过船上。蚀涟把船困在灯下。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "蚀涟",
+          "text": "还湿。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "汀兰",
+          "text": "灯挑高了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "她也能看见。"
+        }
+      ],
+      "entrance": {
+        "style": "lamp",
+        "line": "水面亮处未必安全。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "水面亮处未必安全。"
       }
     },
     {
@@ -951,9 +1699,9 @@
       "chapter_id": "water",
       "optional": false,
       "recommendation": "历练等级 15 · 可强化装备后重试",
-      "story": "汀兰请你同守两侧水轮，上游囤积的潮水正等着轮流泄下。",
+      "story": "沉水边多了一道安全绳；阿宁已经从对岸回来，伤却没有说。",
       "tactics": "水轮轮流泄潮，先躲上游，再换边避开下游回流。",
-      "world_change": "归衡纪事：双汐台的水轮交替提水，守台人不必再独自追赶两边的任务。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [
           "b13"
@@ -976,6 +1724,58 @@
       "battle": {
         "life": 5900,
         "attack": 39
+      },
+      "prelude": [
+        {
+          "speaker": "汀兰",
+          "text": "别下深水。"
+        },
+        {
+          "speaker": "主角",
+          "text": "绳上有药味。",
+          "art": "boat"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "别碰水。",
+          "art": "boat"
+        },
+        {
+          "speaker": "主角",
+          "text": "你受伤了。"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "小伤。",
+          "art": "boat"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "壅鳞",
+          "text": "还深。",
+          "art": "boat"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "我回来了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "先走。"
+        }
+      ],
+      "entrance": {
+        "style": "boat",
+        "line": "看安全绳，不看水面。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "看安全绳，不看水面。"
       }
     },
     {
@@ -987,9 +1787,9 @@
       "chapter_id": "water",
       "optional": false,
       "recommendation": "历练等级 16 · 可强化装备后重试",
-      "story": "汀兰翻出父亲的巡河册，平静水面下，岸边三根量水碑已逐格发亮。",
+      "story": "三碑峡水位缓了，渡口却有一条自己回来的空船。",
       "tactics": "读三碑的顺序，远离先亮的冲击，等背甲泄压再反击。",
-      "world_change": "三碑峡的支渠疏通，渡口重见灯火；水行归衡印已记录在正式冒险进度中。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [
           "b14"
@@ -1012,6 +1812,59 @@
       "battle": {
         "life": 7000,
         "attack": 41
+      },
+      "prelude": [
+        {
+          "speaker": "汀兰",
+          "text": "水势太稳。"
+        },
+        {
+          "speaker": "主角",
+          "text": "船谁划的？",
+          "art": "boat"
+        },
+        {
+          "speaker": "汀兰",
+          "text": "它自己回来的。",
+          "art": "boat"
+        },
+        {
+          "speaker": "壅川",
+          "text": "……",
+          "art": "boat"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "壅川",
+          "text": "……",
+          "art": "boat"
+        },
+        {
+          "speaker": "汀兰",
+          "text": "船上没人。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。",
+          "art": "boat"
+        },
+        {
+          "speaker": "汀兰",
+          "text": "回家吧。",
+          "art": "boat"
+        }
+      ],
+      "entrance": {
+        "style": "boat",
+        "line": "先让水退。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "先让水退。",
+        "phase": "堤还没稳。",
+        "low_hp": "……",
+        "defeat": "……"
       }
     },
     {
@@ -1023,9 +1876,9 @@
       "chapter_id": "side",
       "optional": true,
       "recommendation": "历练等级 17 · 可强化装备后重试",
-      "story": "守夜人阿更总走回同一盏灯下，只有更漏台的小门还通向清晨。",
+      "story": "旧台边有一张被改过的地图；刹羽总想先替所有人选最短的路。",
       "tactics": "依次避开余灯，最后第一盏还会再亮一次。",
-      "world_change": "旁篇纪事：更漏台的余灯熄灭，阿更把下一班巡夜交给了同伴。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [],
         "any_clears": [
@@ -1052,6 +1905,49 @@
       "battle": {
         "life": 6000,
         "attack": 42
+      },
+      "prelude": [
+        {
+          "speaker": "阿宁",
+          "text": "我没等你。",
+          "art": "map"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "刹羽守着旧台，不许人慢。",
+          "art": "map"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "刹羽",
+          "text": "还快。",
+          "art": "map"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "她画的路，对。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "改了三次。"
+        }
+      ],
+      "entrance": {
+        "style": "map",
+        "line": "别跟着它抢第一步。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "别跟着它抢第一步。"
       }
     },
     {
@@ -1063,9 +1959,9 @@
       "chapter_id": "side",
       "optional": true,
       "recommendation": "历练等级 18 · 可强化装备后重试",
-      "story": "陪老抄书人摆回渡船、茶杯和窗边椅子，墨雾里的归路就有了熟悉的标记。",
+      "story": "长夜台留着一盏给归人的灯；魇灯想把所有人都留在同一刻。",
       "tactics": "墨潮绕过亮起的灯签，照地面提示进圈，或退到墨环之外。",
-      "world_change": "旁篇纪事：熟悉的茶杯、渡船模型和窗边椅子回到原处，众人听抄书人愿意讲的一段。",
+      "world_change": "灯芯去了。",
       "requires": {
         "all_clears": [],
         "any_clears": [
@@ -1092,6 +1988,49 @@
       "battle": {
         "life": 7600,
         "attack": 43
+      },
+      "prelude": [
+        {
+          "speaker": "阿宁",
+          "text": "灯火不灭。"
+        },
+        {
+          "speaker": "主角",
+          "text": "像家里。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "魇灯借了他的影。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "主角",
+          "text": "不是他。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "魇灯",
+          "text": "还等。",
+          "art": "lamp"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "灯芯去了。"
+        },
+        {
+          "speaker": "主角",
+          "text": "不用点着。"
+        }
+      ],
+      "entrance": {
+        "style": "lamp",
+        "line": "灯太亮时，先看影子。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "灯太亮时，先看影子。"
       }
     },
     {
@@ -1103,9 +2042,9 @@
       "chapter_id": "echo",
       "optional": false,
       "recommendation": "历练等级 19 · 可强化装备后重试",
-      "story": "晦鳞的镜鳞倒映五域残阵，共守台上每道旧阵都会在对岸留下倒影。",
+      "story": "旧栈道把熟悉的话送回来；忘机却不肯说出最后那句。",
       "tactics": "看完实阵再看对岸倒影，末段沿斜角闪过双线。",
-      "world_change": "共守纪事：晦鳞退去墨色，水镜映出五域沿途修好的灯、桥与风亭。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [
           "b03",
@@ -1132,6 +2071,53 @@
       "battle": {
         "life": 7700,
         "attack": 45
+      },
+      "prelude": [
+        {
+          "speaker": "阿宁",
+          "text": "栈道会学人说话。"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "忘机",
+          "text": "等——",
+          "art": "letter"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "别答。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "忘机",
+          "text": "等——",
+          "art": "letter"
+        },
+        {
+          "speaker": "主角",
+          "text": "我先回。",
+          "art": "letter_changed"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "嗯。"
+        },
+        {
+          "speaker": "主角",
+          "text": "她没问。"
+        }
+      ],
+      "entrance": {
+        "style": "letter",
+        "line": "听见旧话，不必回答。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "听见旧话，不必回答。"
       }
     },
     {
@@ -1143,9 +2129,9 @@
       "chapter_id": "finale",
       "optional": false,
       "recommendation": "历练等级 20 · 可强化装备后重试",
-      "story": "执衡把五坛停在同一刻，守灯者带回五枚归衡印，请各地重新掌管自己的节奏。",
+      "story": "常生台的棋还没下完；执衡把两只杯子都留在昨天。",
       "tactics": "按木、火、土、金、水的印次走位，水印收束后趁天仪停转反击。",
-      "world_change": "终章纪事：常生仪拆成五座小台，由各地共同照看；仍可重访正式秘境、继续修炼装备。",
+      "world_change": "嗯。",
       "requires": {
         "all_clears": [
           "b03",
@@ -1173,7 +2159,141 @@
       "battle": {
         "life": 9000,
         "attack": 46
+      },
+      "prelude": [
+        {
+          "speaker": "执衡",
+          "text": "恒常。",
+          "art": "chess"
+        },
+        {
+          "speaker": "主角",
+          "text": "这盘棋没下完。",
+          "art": "chess"
+        },
+        {
+          "speaker": "执衡",
+          "text": "不可变。",
+          "art": "chess"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "我收灯。"
+        }
+      ],
+      "resolution": [
+        {
+          "speaker": "执衡",
+          "text": "……哦。",
+          "art": "chess"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "两杯都冷了。",
+          "art": "cups"
+        },
+        {
+          "speaker": "主角",
+          "text": "嗯。",
+          "art": "cups"
+        },
+        {
+          "speaker": "阿宁",
+          "text": "回吧。",
+          "art": "home"
+        }
+      ],
+      "entrance": {
+        "style": "chess",
+        "line": "不可变。",
+        "motion": "emerge"
+      },
+      "barks": {
+        "entry": "不可变。",
+        "phase": "不可缺。",
+        "low_hp": "……",
+        "defeat": "……哦。"
       }
     }
-  ]
+  ],
+  "story_title": "按时吃饭",
+  "story_version": "meal-time-p0-v1",
+  "ending_scene": {
+    "scene_id": "ending.home",
+    "title": "按时吃饭",
+    "kind": "ending",
+    "art": "home",
+    "dialogue": [
+      {
+        "speaker": "旁白",
+        "text": "五域的路，到这里就走完了。",
+        "art": "village_return"
+      },
+      {
+        "speaker": "母亲",
+        "text": "回来了。",
+        "art": "home"
+      },
+      {
+        "speaker": "主角",
+        "text": "嗯。",
+        "art": "home"
+      },
+      {
+        "speaker": "母亲",
+        "text": "阿宁也到了？",
+        "art": "home"
+      },
+      {
+        "speaker": "阿宁",
+        "text": "到了。",
+        "art": "home"
+      },
+      {
+        "speaker": "母亲",
+        "text": "那多拿双筷子。",
+        "art": "chopsticks"
+      },
+      {
+        "speaker": "旁白",
+        "text": "灶边有一副旧碗筷。她没有收。",
+        "art": "old_bowl"
+      },
+      {
+        "speaker": "母亲",
+        "text": "面没放葱。",
+        "art": "noodles"
+      },
+      {
+        "speaker": "主角",
+        "text": "……嗯。",
+        "art": "noodles"
+      },
+      {
+        "speaker": "母亲",
+        "text": "咸不咸？",
+        "art": "noodles"
+      },
+      {
+        "speaker": "主角",
+        "text": "不咸。",
+        "art": "noodles"
+      },
+      {
+        "speaker": "母亲",
+        "text": "那就好。",
+        "art": "noodles"
+      },
+      {
+        "speaker": "母亲",
+        "text": "锅里还有。",
+        "art": "noodles"
+      },
+      {
+        "speaker": "旁白",
+        "text": "窗外的灯，灭了一盏。院门没有关。",
+        "art": "door_lamp"
+      }
+    ]
+  }
 }

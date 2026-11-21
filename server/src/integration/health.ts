@@ -74,39 +74,58 @@ export class HealthBridge {
       const binding = this.validate(input, task);
       const character = this.game.own(binding.account_id, binding.cultivator_id);
       requireCondition(character.lifecycle === 'cultivating', 'TASK_NOT_APPLICABLE', '当前生命周期不结算健康任务', 409);
-      const template = JSON.parse(task.template_snapshot) as Template;
-      const rules = checkedRules(this.game.rules, task.rule_version);
-      const today = dayKey(this.now());
-      const settlementId = id('settlement');
-      let reward = { spirit_stones: 0, realm_xp: 0, seals: 0 };
-      let reason: string;
-      if (isPixel(rules)) {
-        // B 的日奖励组：同角色、同组、同一北京时间任务日只发一次；另一项任务仍记为完成。核验级别只决定能否成立，不改奖励量。
-        requireCondition(template.reward_group, 'INVALID_RULES', '像素任务模板缺少奖励组', 500);
-        const claimed = this.db.get('SELECT settlement_id FROM reward_groups WHERE cultivator_id = ? AND reward_group = ? AND day = ?', character.id, template.reward_group, task.period);
-        reason = claimed ? 'daily_group_claimed' : 'daily_group_reward';
-        if (!claimed) reward = { ...rules.daily_reward };
-      } else {
-        const used = this.db.get<{ amount: number }>('SELECT COALESCE(SUM(spirit_stones), 0) AS amount FROM settlements WHERE cultivator_id = ? AND day = ?', character.id, today)!.amount;
-        // 用服务端结算时间计算滚动窗口，客户端不能通过修改图片日期绕过限额。
-        const sameType = this.db.get("SELECT id FROM settlements WHERE cultivator_id = ? AND event_type = ? AND settled_at > ? AND reason != 'same_type_limit'", character.id, template.event_type, this.now() - 86400);
-        reward = { ...(sameType ? { spirit_stones: 0, realm_xp: 0 } : calculateReward(rules, template, input.verification_level, compensationTier(this.game.rules, character), Math.max(0, rules.daily_limit - used))), seals: 0 };
-        reason = sameType ? 'same_type_limit' : used >= rules.daily_limit ? 'daily_stone_limit' : 'verified_task';
-      }
-      this.db.run('INSERT INTO settlements (id, task_id, cultivator_id, event_type, rule_version, verification_level, spirit_stones, realm_xp, settled_at, day, reason, seals) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', settlementId, task.id, character.id, template.event_type, rules.version, input.verification_level, reward.spirit_stones, reward.realm_xp, this.now(), isPixel(rules) ? task.period : today, reason, reward.seals);
-      if (reason === 'daily_group_reward') this.db.run('INSERT INTO reward_groups VALUES (?, ?, ?, ?)', character.id, template.reward_group!, task.period, settlementId);
-      this.game.ledger.change(binding.account_id, character.id, 'spirit_stones', reward.spirit_stones, settlementId, reason);
-      this.game.ledger.change(binding.account_id, character.id, 'realm_xp', reward.realm_xp, settlementId, reason);
-      if (reward.seals) this.game.ledger.change(binding.account_id, character.id, 'seals', reward.seals, settlementId, reason);
-      this.db.run("UPDATE tasks SET status = 'settled' WHERE id = ?", task.id);
+      const settlement = this.settleTask(binding.account_id, character, task, input.verification_level);
       this.db.run("UPDATE verified_results SET status = 'settled', error_code = '' WHERE service_id = ? AND event_id = ?", serviceId, eventId);
-      const settlement = this.db.get<Settlement>('SELECT * FROM settlements WHERE id = ?', settlementId)!;
       const view = this.view(settlement);
-      this.db.run('INSERT INTO outbox (id, binding_id, consent_version, settlement_id, payload, available_at) VALUES (?, ?, ?, ?, ?, ?)', id('notification'), binding.id, input.consent_version, settlementId, JSON.stringify(view), this.now());
+      this.db.run('INSERT INTO outbox (id, binding_id, consent_version, settlement_id, payload, available_at) VALUES (?, ?, ?, ?, ?, ?)', id('notification'), binding.id, input.consent_version, settlement.id, JSON.stringify(view), this.now());
       this.db.touch(binding.account_id);
       this.beforeSettlementCommit();
       return view;
     });
+  }
+
+  confirmPtds(accountId: string, cultivarId: string, date: string) {
+    return this.db.transaction(() => {
+      const character = this.game.own(accountId, cultivarId);
+      requireCondition(character.role === 'self', 'SELF_REQUIRED', '请使用本人角色确认 PTDS 记录', 403);
+      requireCondition(date === dayKey(this.now()), 'INVALID_DATE', '仅可确认北京时间当天的 PTDS 摘要');
+      const assigned = this.game.assign(accountId, cultivarId, 'daily_planned_record', date);
+      const task = this.game.task(assigned.task_instance_id);
+      const previous = this.db.get<Settlement>('SELECT * FROM settlements WHERE task_id = ?', task.id);
+      if (previous) return this.view(previous);
+      const settlement = this.settleTask(accountId, character, task, 'self_report');
+      this.db.touch(accountId);
+      return this.view(settlement);
+    });
+  }
+
+  private settleTask(accountId: string, character: ReturnType<GameService['own']>, task: Task, verification: Verification): Settlement {
+    const template = JSON.parse(task.template_snapshot) as Template;
+    const rules = checkedRules(this.game.rules, task.rule_version);
+    const today = dayKey(this.now());
+    const settlementId = id('settlement');
+    let reward = { spirit_stones: 0, realm_xp: 0, seals: 0 };
+    let reason: string;
+    if (isPixel(rules)) {
+      // B 的日奖励组：同角色、同组、同一北京时间任务日只发一次；另一项任务仍记为完成。核验级别只决定能否成立，不改奖励量。
+      requireCondition(template.reward_group, 'INVALID_RULES', '像素任务模板缺少奖励组', 500);
+      const claimed = this.db.get('SELECT settlement_id FROM reward_groups WHERE cultivator_id = ? AND reward_group = ? AND day = ?', character.id, template.reward_group, task.period);
+      reason = claimed ? 'daily_group_claimed' : 'daily_group_reward';
+      if (!claimed) reward = { ...rules.daily_reward };
+    } else {
+      const used = this.db.get<{ amount: number }>('SELECT COALESCE(SUM(spirit_stones), 0) AS amount FROM settlements WHERE cultivator_id = ? AND day = ?', character.id, today)!.amount;
+      // 用服务端结算时间计算滚动窗口，客户端不能通过修改图片日期绕过限额。
+      const sameType = this.db.get("SELECT id FROM settlements WHERE cultivator_id = ? AND event_type = ? AND settled_at > ? AND reason != 'same_type_limit'", character.id, template.event_type, this.now() - 86400);
+      reward = { ...(sameType ? { spirit_stones: 0, realm_xp: 0 } : calculateReward(rules, template, verification, compensationTier(this.game.rules, character), Math.max(0, rules.daily_limit - used))), seals: 0 };
+      reason = sameType ? 'same_type_limit' : used >= rules.daily_limit ? 'daily_stone_limit' : 'verified_task';
+    }
+    this.db.run('INSERT INTO settlements (id, task_id, cultivator_id, event_type, rule_version, verification_level, spirit_stones, realm_xp, settled_at, day, reason, seals) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', settlementId, task.id, character.id, template.event_type, rules.version, verification, reward.spirit_stones, reward.realm_xp, this.now(), isPixel(rules) ? task.period : today, reason, reward.seals);
+    if (reason === 'daily_group_reward') this.db.run('INSERT INTO reward_groups VALUES (?, ?, ?, ?)', character.id, template.reward_group!, task.period, settlementId);
+    this.game.ledger.change(accountId, character.id, 'spirit_stones', reward.spirit_stones, settlementId, reason);
+    this.game.ledger.change(accountId, character.id, 'realm_xp', reward.realm_xp, settlementId, reason);
+    if (reward.seals) this.game.ledger.change(accountId, character.id, 'seals', reward.seals, settlementId, reason);
+    this.db.run("UPDATE tasks SET status = 'settled' WHERE id = ?", task.id);
+    return this.db.get<Settlement>('SELECT * FROM settlements WHERE id = ?', settlementId)!;
   }
 
   result(serviceId: string, eventId: string) {

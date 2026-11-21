@@ -324,8 +324,6 @@ func show_result() -> void:
 		var change: Variant = state.get("rating_change")
 		if change is Dictionary:
 			ui.paragraph(column, "论剑积分 %d → %d  (%+d)" % [int(change.before), int(change.after), int(change.delta)], 23, Color("f6d599"))
-		else:
-			ui.paragraph(column, "本场不计入论剑积分", 19, Color("f5e4c3"))
 	ui.button(column, "返回论剑台", request_leave, true)
 
 func can_close() -> bool:

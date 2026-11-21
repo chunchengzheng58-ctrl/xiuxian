@@ -139,7 +139,9 @@ export class ExpeditionService {
       match.enemy.hp = result.enemy_hp;
       match.finish(result.won, result.reason);
     }
+    const stage = expeditionStages.find(item => item.stage_id === row.stage_id)!;
     return { ...match.state(), run_id: row.id, stage_id: row.stage_id, boss_id: row.stage_id, avatar: row.avatar,
+      presentation: { entrance: stage.entrance, barks: stage.barks },
       result: row.result ? JSON.parse(row.result) as Recorded : null };
   }
 

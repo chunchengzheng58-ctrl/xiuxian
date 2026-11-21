@@ -48,7 +48,7 @@ test('共享命令登记、严格字段检查、未知业务不伪造成功', as
   const leaked = await app.request('/api/v2/commands', { version: 1, command: 'growth.create', payload: { name: 'sample', element: 'water', blood_glucose: 8 } }, account.token, 'POST', 'create');
   assert.equal(leaked.status, 400);
   const unsupported = await app.request('/api/v2/commands', { version: 1, command: 'social.visit', payload: { cultivator_id: 'sample' } }, account.token);
-  assert.equal(unsupported.body.code, 'NOT_IMPLEMENTED');
+  assert.equal(unsupported.body.code, 'NOT_FOUND');
   assert.equal((await app.request('/api/v2/commands', { version: 1, command: 'combat.start', payload: { cultivator_id: 'sample', encounter_id: 'b00' } }, account.token)).body.code, 'NOT_FOUND');
   assert.equal((await app.request('/api/v2/snapshot')).status, 401);
 });

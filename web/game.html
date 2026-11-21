@@ -18,6 +18,31 @@
     #status { position: absolute; inset: 0; display: grid; place-content: center;
       gap: 12px; padding: 24px; text-align: center; background: #10151f; }
     #status[hidden] { display: none; }
+    #status { background: #10151f url('loading/title.png') center / cover no-repeat; }
+    #status { isolation: isolate; }
+    #status::after { content: ''; position: absolute; inset: 0; z-index: -1;
+      background: linear-gradient(transparent 55%, #10151ff2); }
+    .spirit-array { position: absolute; width: min(28vw, 240px); aspect-ratio: 1;
+      top: 10%; left: 50%; transform: translateX(-50%); --charge: 0;
+      color: #f3cb78; filter: drop-shadow(0 0 14px #eab65c); opacity: calc(.45 + var(--charge) * .55); }
+    .spirit-array i { position: absolute; inset: 0; border: 2px dashed #eac679;
+      border-radius: 50%; animation: orbit 28s linear infinite; }
+    .spirit-array i:nth-child(2) { inset: 16%; border-style: dotted; animation-direction: reverse; animation-duration: 18s; }
+    .spirit-array i:nth-child(3) { inset: 30%; border-style: solid; animation: breathe 3s ease-in-out infinite; }
+    .spirit-array b { position: absolute; inset: 0; display: grid; place-items: center;
+      font-size: 40px; animation: breathe 3s ease-in-out infinite; }
+    @keyframes orbit { to { transform: rotate(360deg); } }
+    @keyframes breathe { 50% { opacity: .4; transform: scale(.94); } }
+    .loading-ui { position: absolute; bottom: max(65px, 9vh); left: 50%; transform: translateX(-50%);
+      display: grid; gap: 12px; width: min(80vw, 520px); text-shadow: 0 2px 4px #000; }
+    .loading-ui { bottom: max(32px, 5vh); width: min(82vw, 600px); gap: 10px;
+      padding: 20px 24px; box-sizing: border-box; border: 1px solid #d4a85566;
+      border-radius: 14px; background: #10151fdd; box-shadow: 0 8px 40px #0005; }
+    #transfer-details { font-size: 14px; font-variant-numeric: tabular-nums; color: #edcf99; }
+    #cache-details { font-size: 12px; color: #bdafa0; }
+    .loading-ui progress { width: 100%; height: 12px; }
+    @media (prefers-reduced-motion: reduce) { .spirit-array * { animation: none !important; } }
+    @media (max-height: 500px) { .loading-ui { bottom: 25px; padding: 10px; gap: 5px; } .spirit-array { top: 4%; width: 100px; } }
     progress { width: min(65vw, 420px); accent-color: #dbab62; justify-self: center; }
     #rotate { display: none; pointer-events: none; position: absolute;
       top: max(12px, env(safe-area-inset-top)); padding: 9px 14px; border-radius: 20px;
@@ -26,16 +51,65 @@
       #stage:not(.editing) #rotate { display: block; }
     }
   </style>
+<script>
+window.xiuxianPickPtdsSummary = (receive) => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.hidden = true;
+  document.body.appendChild(input);
+
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    input.remove();
+    if (!file) return;
+    if (file.size > 4096) {
+      receive(false, "摘要文件过大，请选择 PTDS 导出工具生成的 JSON。");
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      receive(false, "无法读取摘要文件。");
+      return;
+    }
+    receive(true, text);
+  }, {once: true});
+  const dialog = document.createElement("dialog");
+  dialog.id = "ptds-browser-picker";
+  const choose = document.createElement("button");
+  choose.textContent = "从本机选择 JSON";
+  const cancel = document.createElement("button");
+  cancel.textContent = "取消";
+  choose.onclick = () => input.click();
+  cancel.onclick = () => dialog.close();
+  input.addEventListener("change", () => dialog.close(), {once: true});
+  dialog.addEventListener("close", () => { input.remove(); dialog.remove(); document.getElementById("canvas").focus(); }, {once: true});
+  dialog.append(choose, cancel);
+  document.body.appendChild(dialog);
+  dialog.showModal();
+};
+</script>
 </head>
 <body>
   <main id="stage">
     <canvas id="canvas" width="1440" height="900">此浏览器无法显示游戏画面。</canvas>
     <span id="rotate">横屏游玩，按键更好操作</span>
     <div id="status" role="status">
+      <div class="spirit-array" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></div>
+      <div class="loading-ui">
       <span id="status-text">正在载入仙村…</span>
       <progress id="progress" aria-label="加载进度"></progress>
+      <span id="transfer-details">正在准备资源…</span>
+      <span id="cache-details">首次进入需下载资源，完成后自动缓存到此设备</span>
+      </div>
     </div>
   </main>
+  <script>
+    // Start the opening before downloading the engine and game package.
+    function finishOpening() {}
+  </script>
   <noscript>请启用 JavaScript 后重新打开游戏。</noscript>
   <script src="$GODOT_URL"></script>
   <script>
@@ -44,6 +118,59 @@
     const canvas = document.getElementById("canvas");
     const status = document.getElementById("status");
     const progress = document.getElementById("progress");
+    const transferDetails = document.getElementById("transfer-details");
+    const cacheDetails = document.getElementById("cache-details");
+    let cachedBytes = 0;
+    const originalFetch = window.fetch.bind(window);
+    // Cache in the page: first downloads may outlive a service-worker event's lifetime.
+    window.fetch = async (input, init) => {
+      const request = new Request(input, init), url = new URL(request.url);
+      if (request.method !== 'GET' || request.headers.has('Range') || url.origin !== location.origin ||
+          !/^\/web-[a-f0-9]{40}\/index\.(pck|wasm)$/.test(url.pathname)) return originalFetch(input, init);
+      let cache;
+      try {
+        cache = await caches.open('xiuxian-game-resources-v1');
+        const saved = await cache.match(request);
+        if (saved) {
+          cachedBytes += config.fileSizes[url.pathname.split('/').pop()] || 0;
+          cacheDetails.textContent = '正在读取此设备已缓存的资源';
+          return saved;
+        }
+      } catch { cacheDetails.textContent = '此浏览器未能保存缓存，下次可能需要重新下载'; }
+      const response = await originalFetch(input, init);
+      if (cache && response.ok && response.status === 200) response.clone().arrayBuffer().then(body => {
+        const expected = config.fileSizes[url.pathname.split('/').pop()];
+        if (expected && body.byteLength !== expected) throw Error('Incomplete resource');
+        const headers = new Headers(response.headers);
+        headers.delete('Content-Encoding');
+        headers.set('Content-Length', String(body.byteLength));
+        return cache.put(request, new Response(body, {status: 200, headers}));
+      }).catch(error => { console.warn('资源缓存未完成', url.pathname, String(error)); cacheDetails.textContent = '资源缓存未完成，下载成功后会再次保存'; });
+      return response;
+    };
+    let lastBytes = 0, lastSample = performance.now(), rate = 0;
+    const mb = n => (n / 1048576).toFixed(1) + " MB";
+    navigator.serviceWorker?.addEventListener("message", event => {
+      if (event.data?.type === "resource-cache-hit") {
+        cachedBytes += event.data.bytes || 0;
+        cacheDetails.textContent = "正在读取此设备已缓存的资源";
+      }
+      if (event.data?.type === "resource-cache-unavailable") cacheDetails.textContent = "此浏览器未能保存缓存，下次可能需要重新下载";
+    });
+    async function prepareCache() {
+      if (!('serviceWorker' in navigator)) { cacheDetails.textContent = "当前浏览器使用普通资源缓存"; return; }
+      try {
+        const registration = await navigator.serviceWorker.register('/game-cache-sw.js', {scope: '/'});
+        const pending = registration.installing || registration.waiting;
+        if (pending && pending.state !== 'activated') await Promise.race([
+          new Promise(resolve => pending.addEventListener('statechange', () => { if (pending.state === 'activated') resolve(); })),
+          new Promise(resolve => setTimeout(resolve, 5000))]);
+        await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(r, 2500))]);
+        if (!navigator.serviceWorker.controller) await Promise.race([
+          new Promise(r => navigator.serviceWorker.addEventListener('controllerchange', r, {once:true})),
+          new Promise(r => setTimeout(r, 1500))]);
+      } catch { cacheDetails.textContent = "当前浏览器使用普通资源缓存"; }
+    }
     let fittedWidth = 0;
     let fittedHeight = 0;
     let editing = false;
@@ -99,16 +226,70 @@
     if (missing.length) {
       showError(missing.join("、"));
     } else {
-      engine.startGame({
+      prepareCache().then(() => engine.startGame({
         canvas,
         onProgress(current, total) {
           if (total > 0) {
             progress.max = total;
             progress.value = current;
+            const ratio = Math.min(1, current / total);
+            document.querySelector('.spirit-array').style.setProperty('--charge', ratio);
+            document.getElementById("status-text").textContent = current >= total
+              ? "资源已就绪 · 正在初始化仙村…" : "正在准备仙村 · " + Math.floor(ratio * 100) + "%";
           }
+          const now = performance.now();
+          if (now - lastSample >= 500) {
+            rate = Math.max(0, current - cachedBytes - lastBytes) / ((now - lastSample) / 1000);
+            lastBytes = Math.max(0, current - cachedBytes); lastSample = now;
+          }
+          transferDetails.textContent = mb(current) + (total > 0 ? " / " + mb(total) : "")
+            + (current >= total && total > 0 ? " ｜ 资源准备完成" : cachedBytes >= current && cachedBytes > 0 ? " ｜ 从本地缓存读取" : " ｜ " + mb(rate) + "/s");
         },
-      }).then(() => { status.hidden = true; }, showError);
+      })).then(() => { finishOpening(); status.hidden = true; }, showError);
     }
   </script>
+  <!-- site-notice-start -->
+  <style>
+    .site-footer { position:fixed; inset:auto 0 0; z-index:20; display:flex; align-items:center;
+      justify-content:center; gap:14px; background:#10151f; padding:3px 8px; font-size:12px; }
+    .site-footer a { color:#ddd0ba; }
+    .site-footer button, #site-notice button { color:#fff3d6; border:1px solid #ab8558;
+      border-radius:5px; background:#30271f; padding:4px 10px; cursor:pointer; }
+    #site-notice { box-sizing:border-box; width:min(520px, calc(100% - 28px)); max-height:85dvh;
+      overflow:auto; color:#fff3d6; background:#171e2b; border:1px solid #ab8558;
+      border-radius:14px; padding:clamp(16px, 5vw, 28px); }
+    #site-notice::backdrop { background:#080c13bb; }
+    #site-notice h2, #site-notice h3 { margin:0; }
+    #site-notice section { border-top:1px solid #ab855866; margin-top:16px; padding-top:16px; }
+    #site-notice p { color:#ddd0ba; line-height:1.55; }
+    #site-notice header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .client-download { display:inline-block; background:#edc980; color:#241a12; border-radius:6px;
+      padding:9px 14px; font-weight:600; text-decoration:none; }
+  </style>
+  <footer class="site-footer">
+    <button id="open-site-notice" type="button">公告与下载</button>
+    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">赣ICP备2026021313号-3</a>
+  </footer>
+  <dialog id="site-notice" aria-labelledby="site-notice-title">
+    <header>
+      <h2 id="site-notice-title">公告与下载</h2>
+      <form method="dialog"><button autofocus>关闭</button></form>
+    </header>
+    <section aria-labelledby="site-updates">
+      <h3 id="site-updates">版本公告</h3>
+      <p>网页版已更新《按时吃饭》主线，包含九章二十关和新版 Boss 剧情。首次进入需要下载资源，同一浏览器再次进入时会优先使用缓存。</p>
+    </section>
+    <section aria-labelledby="site-downloads">
+      <h3 id="site-downloads">电脑客户端下载</h3>
+      <p>现有 Windows 64 位客户端为较早的 PTDS 版本。体验最新主线请使用网页版。</p>
+      <a class="client-download" href="/downloads/xiuxian-full-ptds-ebb291d-windows-x64.zip" download>下载 Windows 64 位版</a>
+    </section>
+  </dialog>
+  <script>
+    document.getElementById("open-site-notice").addEventListener("click", () => {
+      document.getElementById("site-notice").showModal();
+    });
+  </script>
+  <!-- site-notice-end -->
 </body>
 </html>
