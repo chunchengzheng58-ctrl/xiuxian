@@ -25,15 +25,31 @@ type Room = { row: Duel; match: ArenaMatch };
 export type ArenaSubscription = { id: string; seat: Seat };
 const counterpart = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const avatar = (actor: Pick<Character, 'profile'>) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
-const practiceStyle = (matchId: string) => Number.parseInt(matchId.slice(-2), 16) & 3;
+const practiceRoster = [
+  { id: '青岫47', avatar: 'male', style: 0 },
+  { id: 'LingZhou08', avatar: 'female', style: 1 },
+  { id: '停云_17', avatar: 'female', style: 2 },
+  { id: '栖鹤313', avatar: 'male', style: 3 },
+  { id: '海棠夜雨', avatar: 'female', style: 0 },
+  { id: 'QiuBai26', avatar: 'male', style: 1 },
+  { id: '晚钟92', avatar: 'male', style: 2 },
+  { id: '归舟_406', avatar: 'female', style: 3 },
+] as const;
 const virtualNames = ['青石听雨', '一叶归舟', 'LinYe', '松间微风', '望川_', '云水行', 'WenYu_', '照夜', '木槿听风', '暮山行', '寻松', '鹤归', 'JianYu', '青衫渡', '石桥听雪', '长亭晚'];
-function virtualOpponentId(matchId: string) {
+function legacyOpponentId(matchId: string) {
   const seed = Number.parseInt(matchId.slice(-10), 16);
   const name = virtualNames[seed % virtualNames.length]!;
   return name + (1 + Math.floor(seed / virtualNames.length) % 9999);
 }
-const opponentAlias = (row: Duel) => row.opponent_id === null ? virtualOpponentId(row.id) : row.opponent_alias;
-const arenaOptions = (row: Duel) => row.opponent_id === null ? { practiceStyle: practiceStyle(row.id) } : {};
+function opponentAlias(row: Duel) {
+  const legacyPlaceholder = ['', '对手', '青竹剑侍（AI陪练）'].includes(row.opponent_alias);
+  return row.opponent_id === null && legacyPlaceholder ? legacyOpponentId(row.id) : row.opponent_alias;
+}
+function arenaOptions(row: Duel) {
+  if (row.opponent_id !== null) return {};
+  const profile = practiceRoster.find(player => player.id === row.opponent_alias);
+  return { practiceStyle: profile?.style ?? (Number.parseInt(row.id.slice(-2), 16) & 3) };
+}
 
 export class ArenaService {
   private rooms = new Map<string, Room>();
@@ -363,11 +379,16 @@ export class ArenaService {
         // A practice opponent has no account. Store it separately from rated duels,
         // while the client can still use the matchmaking lobby and arena screens.
         const matchId = id('duel');
-        const opponentAvatar = practiceStyle(matchId) % 2 === 0 ? 'male' : 'female';
+        const previous = this.db.get<{ opponent_alias: string }>(`SELECT opponent_alias FROM arena_duels
+          WHERE challenger_id = ? AND opponent_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1`, player.cultivator_id);
+        const lastProfile = practiceRoster.findIndex(profile => profile.id === previous?.opponent_alias);
+        const nextProfile = lastProfile < 0 ? Number.parseInt(matchId.slice(-2), 16) : lastProfile + 1;
+        const firstChoice = practiceRoster[nextProfile % practiceRoster.length]!;
+        const opponent = firstChoice.id === player.alias ? practiceRoster[(nextProfile + 1) % practiceRoster.length]! : firstChoice;
         this.db.run(`INSERT INTO arena_duels (id, relation_id, challenger_id, opponent_id,
           challenger_alias, opponent_alias, challenger_avatar, opponent_avatar, status, created_at, expires_at, mode)
           VALUES (?, '', ?, NULL, ?, ?, ?, ?, 'active', ?, ?, 'friendly')`,
-        matchId, player.cultivator_id, player.alias, virtualOpponentId(matchId), avatar(player), opponentAvatar, now, now + entrySeconds);
+        matchId, player.cultivator_id, player.alias, opponent.id, avatar(player), opponent.avatar, now, now + entrySeconds);
         capacity--;
       }
       this.touch(player.cultivator_id, null);

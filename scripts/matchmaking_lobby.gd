@@ -110,13 +110,28 @@ func render() -> void:
 	var rating: Dictionary = current.get("rating", {})
 	ui.label_into(content, "我的积分 %d" % int(rating.get("rating", 1000)), 26)
 	var rank := int(rating.rank) if rating.get("rank") != null else 0
-	ui.paragraph(content, "%d 胜  ·  %d 负  ·  %d 平  ·  %s" % [int(rating.get("wins", 0)), int(rating.get("losses", 0)), int(rating.get("draws", 0)), "第 %d 名" % rank if rank > 0 else "完成比赛后上榜"], 18)
+	ui.paragraph(content, "排位 %d 胜  ·  %d 负  ·  %d 平  ·  %s" % [int(rating.get("wins", 0)), int(rating.get("losses", 0)), int(rating.get("draws", 0)), "第 %d 名" % rank if rank > 0 else "暂无排位名次"], 18)
 	ui.paragraph(content, "匹配对战每局 90 秒。对战结束后可查看战果。", 17)
 	ui.line(content)
-	ui.label_into(content, "论剑积分榜", 23)
+	ui.label_into(content, "我的战绩 · 最近 10 场", 23)
+	var recent: Array = current.get("recent", [])
+	if recent.is_empty():
+		ui.paragraph(content, "暂无匹配战绩。", 17)
+	for match_data in recent:
+		var row := HBoxContainer.new()
+		content.add_child(row)
+		var name_label: Label = ui.label_into(row, str(match_data.opponent), 18)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.clip_text = true
+		name_label.tooltip_text = str(match_data.opponent)
+		var delta := int(match_data.rating_delta) if match_data.get("rating_delta") != null else 0
+		var suffix := " · 积分 %+d" % delta if match_data.get("rating_before") != null else ""
+		ui.label_into(row, DuelLobby.result_text(match_data) + suffix, 18)
+	ui.line(content)
+	ui.label_into(content, "全服论剑积分榜 · 前 30 名", 23)
 	var leaders: Array = current.get("leaderboard", [])
 	if leaders.is_empty():
-		ui.paragraph(content, "暂无战绩，完成首场匹配即可留下你的名字。", 17)
+		ui.paragraph(content, "暂无上榜玩家。", 17)
 	for leader in leaders:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 16)
@@ -128,19 +143,6 @@ func render() -> void:
 		name_label.tooltip_text = str(leader.alias)
 		ui.label_into(row, "%d 分" % int(leader.rating), 19).custom_minimum_size.x = 100
 		ui.label_into(row, "%d 胜 %d 负 %d 平" % [int(leader.wins), int(leader.losses), int(leader.draws)], 17).custom_minimum_size.x = 190
-	var recent: Array = current.get("recent", [])
-	if not recent.is_empty():
-		ui.line(content)
-		ui.label_into(content, "近期匹配战绩", 23)
-		for match_data in recent:
-			var row := HBoxContainer.new()
-			content.add_child(row)
-			var name_label: Label = ui.label_into(row, str(match_data.opponent), 18)
-			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			name_label.clip_text = true
-			var delta := int(match_data.rating_delta) if match_data.get("rating_delta") != null else 0
-			var suffix := " · 积分 %+d" % delta if match_data.get("rating_before") != null else ""
-			ui.label_into(row, DuelLobby.result_text(match_data) + suffix, 18)
 
 func build_match_controls() -> void:
 	var active: Variant = current.get("active")

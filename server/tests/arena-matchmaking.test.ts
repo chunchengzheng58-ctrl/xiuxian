@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { buildApp } from '../src/app.js';
+import { repositoryRoot } from '../src/contracts.js';
 import { secret } from '../src/core.js';
 import { ArenaService, type ArenaSubscription } from '../src/game/arena.js';
 import { fixture } from './helpers.js';
@@ -188,8 +192,8 @@ test('公开匹配：排队会话失效/生命周期变化清除，积分差距�
   app.advance(15);app.game.arena.step(1);
   const leftBot=(await sendLeft('combat.matchmaking_lobby')).active;
   const rightBot=(await right.send('combat.matchmaking_lobby')).active;
-  assert.match(leftBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
-  assert.match(rightBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
+  assert.match(leftBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
+  assert.match(rightBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
   assert.ok(!('bot' in leftBot));
   assert.notEqual(leftBot.match_id,rightBot.match_id);
 });
@@ -206,11 +210,10 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   app.game.arena.step(1);
   const { active, queue } = await left.send('combat.matchmaking_lobby');
   assert.equal(queue, null);
-  assert.match(active.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
+  assert.match(active.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
   assert.ok(!('bot' in active));
   assert.equal(app.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 2);
-  app.db.run("UPDATE arena_duels SET opponent_alias = '对手' WHERE id = ?", active.match_id);
-  assert.equal((await left.send('combat.matchmaking_lobby')).active.opponent, active.opponent);
+  assert.equal(app.db.get<{ opponent_alias: string }>('SELECT opponent_alias FROM arena_duels WHERE id = ?', active.match_id)?.opponent_alias, active.opponent);
   assert.throws(() => app.game.arena.subscribe(right.account_id, active.match_id), /对战不存在/);
 
   const subscription = app.game.arena.subscribe(left.account_id, active.match_id);
@@ -231,4 +234,77 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   assert.equal(lobby.recent[0].opponent, active.opponent);
   assert.equal(lobby.recent[0].mode, 'ranked');
   assert.equal(lobby.recent[0].rating_delta, null);
+});
+
+test('八名虚拟玩家轮换，战绩保存到原账号并可重开读取', async () => {
+  const testDirectory = join(repositoryRoot, 'work/arena-history-tests');
+  mkdirSync(testDirectory, { recursive: true });
+  let now = 1795255200;
+  const options = { databasePath: join(mkdtempSync(join(testDirectory, 'history-')), 'game.sqlite'), now: () => now, worker: false };
+  const credentials = { username: 'arena_history_player', password: 'arena-history-fixture-password' };
+  const first = await buildApp(options);
+  let actorId: string;
+  const encountered = new Map<string, string>();
+  const history: { match_id: string; opponent: string; reason: string; winner: number }[] = [];
+  try {
+    await first.auth.register(credentials);
+    const { account_id } = await first.auth.login(credentials);
+    const created = first.game.execute(account_id, 'growth.create_member', { role: 'self', name: '试剑者', profile: { title: '试剑者', avatar: 'male' }, request_id: secret() }) as { cultivator_id: string };
+    actorId = created.cultivator_id;
+    const actor = first.game.own(account_id, actorId);
+    first.game.social.saveProfile(actor, '试剑者', false);
+    for (let round = 0; round < 9; round++) {
+      first.game.arena.matchmakingJoin(actor);
+      now += 15;
+      first.game.arena.step(1);
+      const active = first.game.arena.matchmakingLobby(actor).active!;
+      const entry = first.game.arena.subscribe(account_id, active.match_id);
+      first.game.arena.connect(entry, true);
+      first.game.arena.step(52);
+      const fight = first.game.arena.state(entry)!;
+      assert.equal(fight.phase, 'fighting');
+      assert.equal(fight.names[1], active.opponent);
+      if (round < 8) assert.equal(encountered.has(active.opponent), false);
+      else assert.equal(encountered.get(active.opponent), fight.avatars[1]);
+      encountered.set(active.opponent, fight.avatars[1]!);
+      const result = first.game.arena.leave(actor, active.match_id);
+      assert.equal(result.rating_delta, null);
+      assert.equal(result.opponent, active.opponent);
+      history.unshift({ match_id: active.match_id, opponent: active.opponent, reason: 'forfeit', winner: 1 });
+    }
+    assert.equal(encountered.size, 8);
+    assert.deepEqual(new Set(encountered.values()), new Set(['male', 'female']));
+    assert.equal(first.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 1);
+    const legacy = history.at(-1)!;
+    first.db.run("UPDATE arena_duels SET opponent_alias = '一叶归舟7183' WHERE id = ?", legacy.match_id);
+    legacy.opponent = '一叶归舟7183';
+  } finally { await first.app.close(); }
+
+  const restarted = await buildApp(options);
+  try {
+    const session = await restarted.auth.login(credentials);
+    const response = await restarted.app.inject({ method: 'POST', url: '/api/v2/commands',
+      headers: { authorization: `Bearer ${session.token}` },
+      payload: { version: 1, command: 'combat.matchmaking_lobby', payload: { cultivator_id: actorId } } });
+    assert.equal(response.statusCode, 200);
+    const lobby = response.json().data as ReturnType<ArenaService['matchmakingLobby']>;
+    assert.deepEqual(lobby.recent.map(({ match_id, opponent, reason, winner }) => ({ match_id, opponent, reason, winner })), history);
+    assert.equal(lobby.rating.rating, 1000);
+    assert.deepEqual(lobby.leaderboard, []);
+  } finally { await restarted.app.close(); }
+});
+
+test('全服论剑榜只返回积分前 30 名，榜外玩家仍可查询自己的名次', async context => {
+  const { app, left } = await players(context);
+  app.db.run('INSERT INTO arena_ratings (cultivator_id, rating, losses) VALUES (?, 900, 1)', left.id);
+  for (let rank = 1; rank <= 31; rank++) {
+    const id = `ranking-fixture-${rank}`;
+    app.db.run("INSERT INTO cultivators (id, account_id, name, element, created_at) VALUES (?, ?, '临时角色', 'water', ?)", id, left.account_id, app.now());
+    app.db.run('INSERT INTO social_profiles (cultivator_id, alias, invite_code) VALUES (?, ?, ?)', id, `玩家${rank}`, rank.toString(16).padStart(16, '0'));
+    app.db.run('INSERT INTO arena_ratings (cultivator_id, rating, wins) VALUES (?, ?, 1)', id, 2000 - rank);
+  }
+  const lobby = await left.send('combat.matchmaking_lobby');
+  assert.equal(lobby.leaderboard.length, 30);
+  assert.equal(lobby.leaderboard[29].alias, '玩家30');
+  assert.equal(lobby.rating.rank, 32);
 });
