@@ -139,14 +139,14 @@ func render() -> void:
 			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name_label.clip_text = true
 			var delta := int(match_data.rating_delta) if match_data.get("rating_delta") != null else 0
-			var suffix := " · 积分 %+d" % delta if match_data.get("rating_before") != null else " · 不计分"
+			var suffix := " · 积分 %+d" % delta if match_data.get("rating_before") != null else ""
 			ui.label_into(row, DuelLobby.result_text(match_data) + suffix, 18)
 
 func build_match_controls() -> void:
 	var active: Variant = current.get("active")
 	var queue: Variant = current.get("queue")
 	if active is Dictionary:
-		ui.label_into(content, "对手已就位 · " + str(active.get("opponent", "同道")), 24)
+		ui.label_into(content, "匹配成功 · " + str(active.get("opponent", "同道")), 24)
 		ui.paragraph(content, "请尽快入场，倒计时结束后开始战斗。", 17)
 		action_button = ui.button(content, "进入匹配擂台" if active.get("mode") == "ranked" else "进入好友擂台", ui.open_duel_battle.bind(str(active.match_id)), true)
 	elif queue is Dictionary:

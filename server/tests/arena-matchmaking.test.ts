@@ -188,8 +188,8 @@ test('公开匹配：排队会话失效/生命周期变化清除，积分差距�
   app.advance(15);app.game.arena.step(1);
   const leftBot=(await sendLeft('combat.matchmaking_lobby')).active;
   const rightBot=(await right.send('combat.matchmaking_lobby')).active;
-  assert.equal(leftBot.opponent,'对手');
-  assert.equal(rightBot.opponent,'对手');
+  assert.match(leftBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
+  assert.match(rightBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
   assert.ok(!('bot' in leftBot));
   assert.notEqual(leftBot.match_id,rightBot.match_id);
 });
@@ -206,9 +206,11 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   app.game.arena.step(1);
   const { active, queue } = await left.send('combat.matchmaking_lobby');
   assert.equal(queue, null);
-  assert.equal(active.opponent, '对手');
+  assert.match(active.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{1,4}$/u);
   assert.ok(!('bot' in active));
   assert.equal(app.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 2);
+  app.db.run("UPDATE arena_duels SET opponent_alias = '对手' WHERE id = ?", active.match_id);
+  assert.equal((await left.send('combat.matchmaking_lobby')).active.opponent, active.opponent);
   assert.throws(() => app.game.arena.subscribe(right.account_id, active.match_id), /对战不存在/);
 
   const subscription = app.game.arena.subscribe(left.account_id, active.match_id);
@@ -226,4 +228,7 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   const lobby = await left.send('combat.matchmaking_lobby');
   assert.deepEqual(lobby.rating, before);
   assert.deepEqual(lobby.leaderboard, []);
+  assert.equal(lobby.recent[0].opponent, active.opponent);
+  assert.equal(lobby.recent[0].mode, 'ranked');
+  assert.equal(lobby.recent[0].rating_delta, null);
 });

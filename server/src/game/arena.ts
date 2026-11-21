@@ -8,7 +8,6 @@ const inviteSeconds = 90;
 const entrySeconds = 45;
 const roomLimit = 128;
 const queueSeconds = 15;
-const unnamedOpponent = '对手';
 const queueLimit = 512;
 type Duel = {
   id: string; relation_id: string; challenger_id: string; opponent_id: string | null;
@@ -27,7 +26,13 @@ export type ArenaSubscription = { id: string; seat: Seat };
 const counterpart = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const avatar = (actor: Pick<Character, 'profile'>) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
 const practiceStyle = (matchId: string) => Number.parseInt(matchId.slice(-2), 16) & 3;
-const opponentAlias = (row: Duel) => row.opponent_id === null ? unnamedOpponent : row.opponent_alias;
+const virtualNames = ['青石听雨', '一叶归舟', 'LinYe', '松间微风', '望川_', '云水行', 'WenYu_', '照夜', '木槿听风', '暮山行', '寻松', '鹤归', 'JianYu', '青衫渡', '石桥听雪', '长亭晚'];
+function virtualOpponentId(matchId: string) {
+  const seed = Number.parseInt(matchId.slice(-10), 16);
+  const name = virtualNames[seed % virtualNames.length]!;
+  return name + (1 + Math.floor(seed / virtualNames.length) % 9999);
+}
+const opponentAlias = (row: Duel) => row.opponent_id === null ? virtualOpponentId(row.id) : row.opponent_alias;
 const arenaOptions = (row: Duel) => row.opponent_id === null ? { practiceStyle: practiceStyle(row.id) } : {};
 
 export class ArenaService {
@@ -82,7 +87,7 @@ export class ArenaService {
       JOIN social_profiles p ON p.cultivator_id = r.cultivator_id WHERE wins + losses + draws > 0
       ORDER BY rating DESC, r.cultivator_id LIMIT 30`).map(({ alias, rating, wins, losses, draws }, index) =>
       ({ rank: index + 1, alias, rating, wins, losses, draws }));
-    const recent = this.db.all<Duel>(`SELECT * FROM arena_duels WHERE mode = 'ranked' AND status = 'finished'
+    const recent = this.db.all<Duel>(`SELECT * FROM arena_duels WHERE (mode = 'ranked' OR opponent_id IS NULL) AND status = 'finished'
       AND (challenger_id = ? OR opponent_id = ?) ORDER BY created_at DESC, rowid DESC LIMIT 10`, actor.id, actor.id)
       .map(row => this.lobbyView(row, row.challenger_id === actor.id ? 0 : 1));
     return { profile, rating: { rating: rating.rating, wins: rating.wins, losses: rating.losses, draws: rating.draws, rank },
@@ -268,7 +273,7 @@ export class ArenaService {
     return {
       match_id: row.id, seat, opponent: seat === 0 ? opponentAlias(row) : row.challenger_alias,
       status: row.status, winner: row.winner, reason: row.reason, expires_at: row.expires_at, closed_at: row.closed_at,
-      mode: row.mode, rating_before: change?.before ?? null, rating_after: change?.after ?? null, rating_delta: change?.delta ?? null,
+      mode: row.opponent_id === null ? 'ranked' : row.mode, rating_before: change?.before ?? null, rating_after: change?.after ?? null, rating_delta: change?.delta ?? null,
     };
   }
 
@@ -362,7 +367,7 @@ export class ArenaService {
         this.db.run(`INSERT INTO arena_duels (id, relation_id, challenger_id, opponent_id,
           challenger_alias, opponent_alias, challenger_avatar, opponent_avatar, status, created_at, expires_at, mode)
           VALUES (?, '', ?, NULL, ?, ?, ?, ?, 'active', ?, ?, 'friendly')`,
-        matchId, player.cultivator_id, player.alias, unnamedOpponent, avatar(player), opponentAvatar, now, now + entrySeconds);
+        matchId, player.cultivator_id, player.alias, virtualOpponentId(matchId), avatar(player), opponentAvatar, now, now + entrySeconds);
         capacity--;
       }
       this.touch(player.cultivator_id, null);
