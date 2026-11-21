@@ -8,7 +8,7 @@ const inviteSeconds = 90;
 const entrySeconds = 45;
 const roomLimit = 128;
 const queueSeconds = 15;
-const botAlias = '青竹剑侍（AI陪练）';
+const unnamedOpponent = '对手';
 const queueLimit = 512;
 type Duel = {
   id: string; relation_id: string; challenger_id: string; opponent_id: string | null;
@@ -26,6 +26,9 @@ type Room = { row: Duel; match: ArenaMatch };
 export type ArenaSubscription = { id: string; seat: Seat };
 const counterpart = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const avatar = (actor: Pick<Character, 'profile'>) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
+const practiceStyle = (matchId: string) => Number.parseInt(matchId.slice(-2), 16) & 3;
+const opponentAlias = (row: Duel) => row.opponent_id === null ? unnamedOpponent : row.opponent_alias;
+const arenaOptions = (row: Duel) => row.opponent_id === null ? { practiceStyle: practiceStyle(row.id) } : {};
 
 export class ArenaService {
   private rooms = new Map<string, Room>();
@@ -83,7 +86,7 @@ export class ArenaService {
       AND (challenger_id = ? OR opponent_id = ?) ORDER BY created_at DESC, rowid DESC LIMIT 10`, actor.id, actor.id)
       .map(row => this.lobbyView(row, row.challenger_id === actor.id ? 0 : 1));
     return { profile, rating: { rating: rating.rating, wins: rating.wins, losses: rating.losses, draws: rating.draws, rank },
-      queue, active: active ? { match_id: active.id, opponent: active.challenger_id === actor.id ? active.opponent_alias : active.challenger_alias, mode: 'ranked', bot: active.opponent_id === null } : null,
+      queue, active: active ? { match_id: active.id, opponent: active.challenger_id === actor.id ? opponentAlias(active) : active.challenger_alias, mode: 'ranked' } : null,
       leaderboard, recent, server_now: this.now() };
   }
 
@@ -180,7 +183,7 @@ export class ArenaService {
     const seat = own?.id === row.challenger_id ? 0 : 1;
     if (row.status === 'active' && !this.rooms.has(matchId)) {
       const remaining = row.expires_at - this.now();
-      if (remaining > 0) this.rooms.set(matchId, { row, match: new ArenaMatch(Math.ceil(remaining * 1000 / arenaTickMs), { bot: row.opponent_id === null }) });
+      if (remaining > 0) this.rooms.set(matchId, { row, match: new ArenaMatch(Math.ceil(remaining * 1000 / arenaTickMs), arenaOptions(row)) });
       else this.db.transaction(() => this.recordResult(row, { winner: null, reason: 'absent', hp: [100, 100] }));
     }
     return { id: matchId, seat };
@@ -234,15 +237,15 @@ export class ArenaService {
     if (!row || !room && row.status !== 'finished') return null;
     let match = room?.match;
     if (!match) {
-      match = new ArenaMatch(0, { bot: row.opponent_id === null });
+      match = new ArenaMatch(0, arenaOptions(row));
       match.fighters[0].hp = row.challenger_hp!;
       match.fighters[1].hp = row.opponent_hp!;
       match.finish(row.winner, row.reason!);
     }
     return {
       match_id: row.id, seat: subscription.seat, ...match.state(),
-      names: [row.challenger_alias, row.opponent_alias], avatars: [row.challenger_avatar, row.opponent_avatar],
-      mode: row.opponent_id === null ? 'ranked' : row.mode, bot: row.opponent_id === null,
+      names: [row.challenger_alias, opponentAlias(row)], avatars: [row.challenger_avatar, row.opponent_avatar],
+      mode: row.opponent_id === null ? 'ranked' : row.mode,
       rating_change: this.ratingChange(row, subscription.seat),
     };
   }
@@ -263,7 +266,7 @@ export class ArenaService {
   private lobbyView(row: Duel, seat: Seat) {
     const change = this.ratingChange(row, seat);
     return {
-      match_id: row.id, seat, opponent: seat === 0 ? row.opponent_alias : row.challenger_alias,
+      match_id: row.id, seat, opponent: seat === 0 ? opponentAlias(row) : row.challenger_alias,
       status: row.status, winner: row.winner, reason: row.reason, expires_at: row.expires_at, closed_at: row.closed_at,
       mode: row.mode, rating_before: change?.before ?? null, rating_after: change?.after ?? null, rating_delta: change?.delta ?? null,
     };
@@ -354,10 +357,12 @@ export class ArenaService {
       if (capacity > 0) {
         // A practice opponent has no account. Store it separately from rated duels,
         // while the client can still use the matchmaking lobby and arena screens.
+        const matchId = id('duel');
+        const opponentAvatar = practiceStyle(matchId) % 2 === 0 ? 'male' : 'female';
         this.db.run(`INSERT INTO arena_duels (id, relation_id, challenger_id, opponent_id,
           challenger_alias, opponent_alias, challenger_avatar, opponent_avatar, status, created_at, expires_at, mode)
-          VALUES (?, '', ?, NULL, ?, ?, ?, 'male', 'active', ?, ?, 'friendly')`,
-        id('duel'), player.cultivator_id, player.alias, botAlias, avatar(player), now, now + entrySeconds);
+          VALUES (?, '', ?, NULL, ?, ?, ?, ?, 'active', ?, ?, 'friendly')`,
+        matchId, player.cultivator_id, player.alias, unnamedOpponent, avatar(player), opponentAvatar, now, now + entrySeconds);
         capacity--;
       }
       this.touch(player.cultivator_id, null);
