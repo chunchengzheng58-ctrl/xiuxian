@@ -329,6 +329,117 @@ CREATE TABLE story_nodes (
   completed_at INTEGER NOT NULL, reward_operation_id TEXT UNIQUE,
   PRIMARY KEY(cultivator_id, node_id)
 );
+`, String.raw`
+CREATE TABLE communities (
+  id TEXT PRIMARY KEY, owner_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, visibility TEXT NOT NULL CHECK(visibility IN ('public', 'friends', 'private')),
+  max_members INTEGER NOT NULL CHECK(max_members BETWEEN 2 AND 200),
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX communities_visibility ON communities(visibility, updated_at);
+CREATE TABLE community_members (
+  community_id TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('owner', 'moderator', 'member')),
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY(community_id, account_id)
+);
+CREATE INDEX community_members_account ON community_members(account_id, joined_at);
+CREATE TABLE community_posts (
+  id TEXT PRIMARY KEY, community_id TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 1000), created_at INTEGER NOT NULL
+);
+CREATE INDEX community_posts_feed ON community_posts(community_id, created_at DESC, id DESC);
+CREATE TABLE community_comments (
+  id TEXT PRIMARY KEY, post_id TEXT NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL
+);
+CREATE INDEX community_comments_feed ON community_comments(post_id, created_at, id);
+CREATE TABLE community_reactions (
+  post_id TEXT NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('like', 'support', 'cheer')),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(post_id, account_id, kind)
+);
+CREATE TABLE pvp_matches (
+  id TEXT PRIMARY KEY, community_id TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+  host_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  guest_account_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+  room_code TEXT NOT NULL UNIQUE, mode TEXT NOT NULL CHECK(mode = 'friendly_duel_v1'),
+  status TEXT NOT NULL CHECK(status IN ('waiting', 'active', 'finished', 'cancelled')),
+  winner_account_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL DEFAULT '', result_summary TEXT, created_at INTEGER NOT NULL,
+  started_at INTEGER, finished_at INTEGER
+);
+CREATE INDEX pvp_matches_community ON pvp_matches(community_id, created_at DESC);
+CREATE TABLE world_messages (
+  id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL
+);
+CREATE INDEX world_messages_feed ON world_messages(created_at DESC, id DESC);
+CREATE TABLE world_bosses (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active', 'defeated', 'expired')),
+  hp_total INTEGER NOT NULL CHECK(hp_total > 0), hp_remaining INTEGER NOT NULL CHECK(hp_remaining BETWEEN 0 AND hp_total),
+  starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX world_bosses_status ON world_bosses(status, starts_at DESC);
+CREATE TABLE world_boss_contributions (
+  boss_id TEXT NOT NULL REFERENCES world_bosses(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  damage INTEGER NOT NULL CHECK(damage >= 0), attempts INTEGER NOT NULL CHECK(attempts >= 0), updated_at INTEGER NOT NULL,
+  PRIMARY KEY(boss_id, account_id)
+);
+CREATE INDEX world_boss_rank ON world_boss_contributions(boss_id, damage DESC, account_id);
+`, String.raw`
+-- 11: An AI opponent needs no account or cultivator row.
+CREATE TABLE arena_duels_v11 (
+  id TEXT PRIMARY KEY,
+  relation_id TEXT NOT NULL,
+  challenger_id TEXT NOT NULL REFERENCES cultivators(id),
+  opponent_id TEXT REFERENCES cultivators(id),
+  challenger_alias TEXT NOT NULL, opponent_alias TEXT NOT NULL,
+  challenger_avatar TEXT NOT NULL, opponent_avatar TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'declined', 'cancelled', 'finished')),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  closed_at INTEGER,
+  winner INTEGER CHECK(winner IN (0, 1)),
+  reason TEXT,
+  challenger_hp INTEGER CHECK(challenger_hp BETWEEN 0 AND 100),
+  opponent_hp INTEGER CHECK(opponent_hp BETWEEN 0 AND 100),
+  mode TEXT NOT NULL DEFAULT 'friendly' CHECK(mode IN ('friendly', 'ranked')),
+  challenger_rating_before INTEGER, challenger_rating_after INTEGER,
+  opponent_rating_before INTEGER, opponent_rating_after INTEGER,
+  CHECK(
+    (opponent_id IS NULL AND mode = 'friendly' AND status IN ('active', 'finished'))
+    OR (opponent_id IS NOT NULL AND challenger_id <> opponent_id)
+  )
+);
+INSERT INTO arena_duels_v11 SELECT * FROM arena_duels;
+DROP TABLE arena_duels;
+ALTER TABLE arena_duels_v11 RENAME TO arena_duels;
+CREATE INDEX arena_challenger ON arena_duels(challenger_id, status, created_at);
+CREATE INDEX arena_opponent ON arena_duels(opponent_id, status, created_at);
+CREATE INDEX arena_active_expiry ON arena_duels(expires_at) WHERE status = 'active';
+CREATE INDEX arena_ranked_history ON arena_duels(challenger_id, opponent_id, mode, created_at);
+`, String.raw`
+-- 12: Account play days are independent of character-specific health rewards.
+CREATE TABLE account_play_days (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  day TEXT NOT NULL,
+  PRIMARY KEY(account_id, day)
+);
+INSERT OR IGNORE INTO account_play_days (account_id, day)
+  SELECT c.account_id, date(play.started_at, 'unixepoch', '+8 hours')
+  FROM (
+    SELECT cultivator_id, started_at FROM expedition_runs
+    UNION ALL SELECT cultivator_id, started_at FROM combat_sessions
+    UNION ALL SELECT challenger_id, created_at FROM arena_duels WHERE status = 'finished'
+    UNION ALL SELECT opponent_id, created_at FROM arena_duels WHERE status = 'finished' AND opponent_id IS NOT NULL
+  ) play JOIN cultivators c ON c.id = play.cultivator_id;
 `];
 
 export class Database {

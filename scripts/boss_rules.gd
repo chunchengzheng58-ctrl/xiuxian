@@ -9,6 +9,23 @@ const DODGE_COST = 24
 const HEAL_COST = 45
 const SWORD_RANGE = 820.0
 const BASIC_RANGE = 210.0
+## 连招与判定：终结斩范围/破韧更高，行云窗口允许普攻命中后衔接剑气。
+const FINISHER_RANGE := 250.0
+const FINISHER_MULTIPLIER := 1.30
+const FINISHER_POISE := 9.0
+const FINISHER_MP := 8
+const FLOW_WINDOW := 0.55
+const FLOW_COST := 12
+const FLOW_MULTIPLIER := 1.30
+const FLOW_COOLDOWN := 1.6
+const HITSTREAK_WINDOW := 2.6
+## 受击怒意只加快下一次出手，不缩短原招式的完整预警。
+const RAGE_THRESHOLD := 80.0
+## 剑意由真实命中、精准闪避和完整护盾抵挡积累；大招不反向充能。
+const ULT_MAX := 100.0
+const ULT_WAVE_TIMES := [0.18, 0.46, 0.76]
+const ULT_WAVE_POWER := [1.4, 1.6, 3.4]
+const ULT_WAVE_POISE := [5.0, 7.0, 22.0]
 const MAX_ADDS = 4
 const WOOD_BUD_TIME = 0.55
 const AIRBORNE_DURATION := .62
@@ -22,6 +39,22 @@ var perfect_dodges: int = 0
 var precision_spent: bool = false
 var combo_step: int = 0
 var combo_time: float = 0
+var hitstreak: int = 0
+var hitstreak_time: float = 0
+var flow_time: float = 0
+var flow_strikes: int = 0
+var finisher_hits: int = 0
+var boss_rage: float = 0.0
+var rage_count: int = 0
+var ult_gauge: float = 0.0
+var ult_active: bool = false
+var ult_clock: float = 0.0
+var ult_wave: int = 0
+var ult_origin := Vector2.ZERO
+var ult_direction := Vector2.RIGHT
+var ult_used: int = 0
+var ult_hits: int = 0
+var flow_armed: bool = false
 var brain: RefCounted
 var pending_action: Dictionary = {}
 var hurt_grace: float = 0
@@ -131,6 +164,8 @@ func _available(cooldown: float, cost: float = 0, can_cancel: bool = false, allo
 		last_message = "人在空中 · 可用云罡护住落地。"
 	elif heal_cast > 0:
 		last_message = "正在归元吐纳，移动寻找安全位置。"
+	elif ult_active:
+		last_message = "赤霄剑域展开中 · 可移动调整位置。"
 	elif not pending_action.is_empty() and not can_cancel:
 		last_message = "正在出招，踏云可取消。"
 	elif cooldown > 0:
@@ -170,23 +205,57 @@ func attack(origin: Vector2 = Vector2(900, 575)) -> Dictionary:
 	return _resolve_attack(origin)
 
 func _resolve_attack(origin: Vector2) -> Dictionary:
+	var step_now := combo_step % 3 + 1 if combo_time > 0 else 1
+	var reach := FINISHER_RANGE if step_now == 3 else BASIC_RANGE
 	for add in adds:
-		if int(add.hp) > 0 and origin.distance_to(add.position) <= BASIC_RANGE:
+		if int(add.hp) > 0 and origin.distance_to(add.position) <= reach:
 			var damage: int = mini(int(add.hp), int(stats.attack) + bonus)
 			add.hp -= damage
 			bonus = 0
 			_combo_hit()
+			_register_hit()
 			mp = minf(max_mp, mp + 5)
 			return {"ok": true, "damage": damage, "target": "add", "position":add.position, "impacts":[{"position":add.position,"damage":damage,"boss":false}], "finished": false, "message": "清理散祟 · 灵力 +5"}
-	if origin.distance_to(boss_position) > BASIC_RANGE:
+	if origin.distance_to(boss_position) > reach:
 		combo_step = 0
 		combo_time = 0
-		return {"ok": true, "damage": 0, "message": "普攻落空，靠近目标再出剑。"}
-	var strike: Dictionary = _strike_boss(int(stats.attack)+bonus,4.0,_combo_hit())
+		return {"ok": true, "damage": 0, "message": "普攻落空 · 需贴近 %d 以内（当前 %d）" % [int(reach), int(origin.distance_to(boss_position))]}
+	var finisher := step_now == 3
+	var chain: float = _combo_hit()
+	var amount := int(stats.attack) + bonus
+	var pressure := 4.0
+	if finisher:
+		amount = int(round(amount * FINISHER_MULTIPLIER))
+		pressure = FINISHER_POISE
+	var strike: Dictionary = _strike_boss(amount, pressure, chain)
 	var damage: int = strike.damage
 	bonus = 0
-	mp = minf(max_mp, mp + 5)
-	return {"ok": true, "damage": damage, "finished": finished, "counter":strike.counter, "combo":combo_step, "impacts":[{"position":boss_position,"damage":damage,"boss":true}], "message": "普攻命中 · 灵力 +5"}
+	_register_hit()
+	var gain := 5
+	if finisher:
+		finisher_hits += 1
+		gain += FINISHER_MP
+	mp = minf(max_mp, mp + gain)
+	return {"ok": true, "damage": damage, "finished": finished, "counter":strike.counter, "combo":combo_step, "finisher":finisher, "impacts":[{"position":boss_position,"damage":damage,"boss":true}], "message": "终结斩 · 破势大增 · 灵力 +%d" % gain if finisher else "普攻命中 · 灵力 +5"}
+
+## 每次命中都会累计连击并打开行云窗口；受击或超时后清零。
+func _register_hit() -> void:
+	hitstreak += 1
+	hitstreak_time = HITSTREAK_WINDOW
+	flow_time = FLOW_WINDOW
+
+func _hitstreak_multiplier() -> float:
+	return 1.0 + minf(0.16, floorf(float(hitstreak) / 5.0) * 0.04)
+
+## 下一段普攻是否为终结斩，用于判定与视觉提示共用同一口径。
+func next_finisher() -> bool:
+	return combo_time > 0 and combo_step % 3 == 2
+
+func basic_reach() -> float:
+	return FINISHER_RANGE if next_finisher() else BASIC_RANGE
+
+func in_basic_range(origin: Vector2) -> bool:
+	return origin.distance_to(boss_position) <= basic_reach()
 
 static func sword_hits(origin: Vector2, direction: Vector2, targets: Array) -> Array:
 	var result: Array = []
@@ -217,7 +286,9 @@ func _resolve_sword(origin: Vector2, direction: Vector2, targets: Array = []) ->
 	var damage = 0
 	var impacts: Array = []
 	var counter_used := false
-	var power = int(round(float(stats.attack) * 2.1))
+	var flowing := flow_armed
+	var power = int(round(float(stats.attack) * 2.1 * (FLOW_MULTIPLIER if flowing else 1.0)))
+	flow_armed = false
 	for target in hits:
 		if target.get("id", "") == "boss":
 			var strike: Dictionary = _strike_boss(power,10)
@@ -230,7 +301,9 @@ func _resolve_sword(origin: Vector2, direction: Vector2, targets: Array = []) ->
 			target.hp -= actual
 			damage += actual
 			impacts.append({"position":target.position,"damage":actual,"boss":false})
-	return {"ok": true, "damage": damage, "impacts":impacts, "counter":counter_used, "hit_count": hits.size(), "message": "听风剑诀 · 剑气掠过路径目标" if not hits.is_empty() else "剑气未命中，调整站位再出剑。"}
+	if not hits.is_empty():
+		_register_hit()
+	return {"ok": true, "damage": damage, "impacts":impacts, "counter":counter_used, "flow":flowing, "hit_count": hits.size(), "message": "行云 · 剑气取消后摇 · 伤害提升" if flowing and not hits.is_empty() else ("听风剑诀 · 剑气掠过路径目标" if not hits.is_empty() else "剑气未命中，调整站位再出剑。")}
 
 func defend() -> bool:
 	if not _available(shield_cd, SHIELD_COST, false, true):
@@ -283,6 +356,7 @@ func receive_damage(raw_damage: int) -> Dictionary:
 			precision_spent = true
 			perfect_dodges += 1
 			counter_time = 2.0
+			ult_gauge = minf(ULT_MAX, ult_gauge + 20.0)
 			stamina = minf(max_stamina,stamina+10)
 			hurt_grace = .10
 			return {"event":"perfect_evade","refund":10}
@@ -294,11 +368,19 @@ func receive_damage(raw_damage: int) -> Dictionary:
 	if amount == 0:
 		if brain != null:
 			hurt_grace = .22
-		return {"event": "blocked", "absorbed": absorbed}
+		if absorbed > 0:
+			# 完整抵挡给予短反击窗口和剑意，护盾不再只是被动拖延。
+			counter_time = maxf(counter_time, 1.2)
+			ult_gauge = minf(ULT_MAX, ult_gauge + 10.0)
+			stamina = minf(max_stamina, stamina + 6.0)
+		return {"event": "blocked", "absorbed": absorbed, "counter": absorbed > 0}
 	var actual = mini(hp, amount)
 	hp -= actual
 	damage_taken += actual
 	hit_count += 1
+	hitstreak = 0
+	hitstreak_time = 0
+	flow_time = 0
 	if brain != null:
 		hurt_grace = .5
 	var interrupted = heal_cast > 0
@@ -352,6 +434,9 @@ func _step_once(delta: float, player_position: Vector2) -> Dictionary:
 	counter_time = maxf(0,counter_time-delta)
 	combo_time = maxf(0,combo_time-delta)
 	if combo_time == 0: combo_step = 0
+	flow_time = maxf(0, flow_time - delta)
+	hitstreak_time = maxf(0, hitstreak_time - delta)
+	if hitstreak_time == 0: hitstreak = 0
 	poise_delay = maxf(0,poise_delay-delta)
 	if brain != null and poise_delay == 0 and not brain.pending_stagger:
 		poise = maxf(0,poise-delta*5)
@@ -375,6 +460,7 @@ func _step_once(delta: float, player_position: Vector2) -> Dictionary:
 		if heal_cast == 0:
 			healed = mini(max_hp - hp, int(round(max_hp * 0.24)) + 12)
 			hp += healed
+			slow_time = 0.0
 	if brain != null:
 		var player_events: Array = []
 		if airborne_time > 0:
@@ -482,6 +568,10 @@ func companion_hit(amount: int) -> int:
 func _step_enemies(delta: float, player: Vector2, healed: int) -> Dictionary:
 	var events: Array = []
 	brain.stage = stage_index
+	if boss_rage >= RAGE_THRESHOLD and brain.provoke():
+		boss_rage = 0.0
+		rage_count += 1
+		events.append({"event":"enraged", "attack":boss_name + "被激怒"})
 	for event in brain.step(delta, player):
 		if event.event == "signature_contact":
 			_receive_signature(event, player, events)
@@ -643,16 +733,19 @@ func _combo_hit() -> float:
 	combo_time = 1.25
 	return 1.22 if combo_step == 3 else 1.0
 
-func _strike_boss(amount: int, pressure: float, chain_multiplier: float = 1.0) -> Dictionary:
+func _strike_boss(amount: int, pressure: float, chain_multiplier: float = 1.0, charge_ultimate: bool = true) -> Dictionary:
 	var counter := brain != null and counter_time>0
-	var multiplier := chain_multiplier
+	var multiplier := chain_multiplier * _hitstreak_multiplier()
 	if counter: multiplier *= 1.45
 	if brain != null and brain.phase == "stagger": multiplier *= 1.20
 	var actual := _deal(roundi(amount*multiplier))
 	if counter: counter_time = 0
+	if charge_ultimate:
+		ult_gauge = minf(ULT_MAX, ult_gauge + pressure * 2.0)
 	if brain != null and not finished and brain.phase != "stagger":
 		poise_delay = 2.8
 		poise = minf(max_poise,poise+(pressure+(18 if counter else 0))*(1.5 if brain.phase == "breath" else 1.0))
+		boss_rage = minf(RAGE_THRESHOLD, boss_rage + pressure * 3.0)
 		if poise>=max_poise:
 			brain.pending_stagger = true
 	return {"damage":actual,"counter":counter}
@@ -665,23 +758,97 @@ func start_action(kind: String, origin: Vector2, direction: Vector2 = Vector2.RI
 		return sword(origin,direction) if kind=="sword" else attack(origin)
 	if kind not in ["basic","sword"]:
 		return {"ok":false,"message":"未知动作。"}
+	var flowing := kind == "sword" and flow_time > 0.0
 	var cooldown := sword_cd if kind=="sword" else attack_cd
-	var cost := SWORD_COST if kind=="sword" else 0
+	var cost := FLOW_COST if flowing else (SWORD_COST if kind=="sword" else 0)
+	if flowing:
+		# 行云只取消普攻后摇与未结算的起剑，不重置剑气自身冷却。
+		pending_action.clear()
+		attack_cd = 0.0
 	if not _available(cooldown,cost): return {"ok":false,"message":last_message}
 	if kind=="sword" and direction.is_zero_approx(): return {"ok":false,"message":"需要一个出剑方向。"}
 	if kind=="sword":
-		mp -= SWORD_COST
-		sword_cd = 2.4
+		mp -= cost
+		sword_cd = FLOW_COOLDOWN if flowing else 2.4
+		flow_armed = flowing
+		if flowing:
+			flow_time = 0.0
+			flow_strikes += 1
 	else:
 		attack_cd = .6
 	pending_action = {"kind":kind,"remaining":.16 if kind=="sword" else .12,"direction":direction.normalized()}
-	return {"ok":true,"queued":true,"damage":0,"message":"听风剑诀 · 起剑" if kind=="sword" else "起剑 · 踏云可取消"}
+	if flowing:
+		pending_action["flow"] = true
+	var message := "听风剑诀 · 起剑" if kind=="sword" else "起剑 · 踏云可取消"
+	if flowing:
+		message = "行云 · 剑气衔接"
+	elif kind == "basic" and next_finisher():
+		message = "终结斩就绪 · 这一剑破势更高"
+	return {"ok":true,"queued":true,"damage":0,"flow":flowing,"message":message}
+
+func ultimate(origin: Vector2, direction: Vector2) -> Dictionary:
+	if brain == null:
+		return {"ok":false, "message":"当前战斗未开启赤霄剑域。"}
+	if ult_gauge < ULT_MAX:
+		last_message = "剑意未满 · 命中、精准闪避或护盾抵挡可充能。"
+		return {"ok":false, "message":last_message}
+	if not _available(0):
+		return {"ok":false, "message":last_message}
+	if direction.is_zero_approx():
+		return {"ok":false, "message":"需要一个剑域展开方向。"}
+	ult_gauge = 0.0
+	ult_active = true
+	ult_clock = 0.0
+	ult_wave = 0
+	ult_origin = origin
+	ult_direction = direction.normalized()
+	ult_used += 1
+	attack_cd = maxf(attack_cd, .35)
+	last_message = "赤霄剑域 · 三段斩击，移动保持安全。"
+	return {"ok":true, "message":last_message}
+
+func _ultimate_strike(wave: int) -> Dictionary:
+	var candidates: Array = []
+	for add in adds:
+		if add.hp > 0:
+			candidates.append(add)
+	candidates.append({"id":"boss", "position":boss_position, "radius":65})
+	var hits := sword_hits(ult_origin, ult_direction, candidates)
+	var power := int(round(float(stats.attack) * float(ULT_WAVE_POWER[wave])))
+	var pressure := float(ULT_WAVE_POISE[wave])
+	var damage := 0
+	var impacts: Array = []
+	var counter_used := false
+	for target in hits:
+		if target.get("id", "") == "boss":
+			# 大招可以积累破势与 Boss 怒意，但不会给自己反向充能。
+			var strike: Dictionary = _strike_boss(power, pressure, 1.0, false)
+			var actual: int = strike.damage
+			counter_used = counter_used or bool(strike.counter)
+			damage += actual
+			impacts.append({"position":boss_position, "damage":actual, "boss":true})
+		elif target.has("hp"):
+			var actual = mini(int(target.hp), power)
+			target.hp -= actual
+			damage += actual
+			impacts.append({"position":target.position, "damage":actual, "boss":false})
+	ult_hits += hits.size()
+	return {"event":"player_hit", "kind":"ultimate", "result":{"ok":true, "damage":damage, "impacts":impacts, "counter":counter_used, "ultimate":true, "ult_wave":wave, "finished":finished, "message":"赤霄剑域 · 第 %d 式" % (wave + 1) if not hits.is_empty() else "剑域第 %d 式落空 · 注意出剑方向" % (wave + 1)}}
 
 func _step_player_action(delta: float, origin: Vector2) -> Array:
-	if pending_action.is_empty(): return []
+	var events: Array = []
+	if ult_active:
+		ult_clock += delta
+		while ult_wave < ULT_WAVE_TIMES.size() and ult_clock + .000001 >= float(ULT_WAVE_TIMES[ult_wave]):
+			events.append(_ultimate_strike(ult_wave))
+			ult_wave += 1
+		if finished or (ult_wave >= ULT_WAVE_TIMES.size() and ult_clock >= 1.04):
+			ult_active = false
+	if pending_action.is_empty(): return events
 	pending_action.remaining -= delta
-	if float(pending_action.remaining)>.00001: return []
+	if float(pending_action.remaining)>.00001: return events
 	var action: Dictionary = pending_action.duplicate()
 	pending_action.clear()
 	var result: Dictionary = _resolve_sword(origin,action.direction) if action.kind=="sword" else _resolve_attack(origin)
-	return [{"event":"player_hit","kind":action.kind,"result":result}]
+	events.append({"event":"player_hit","kind":action.kind,"result":result})
+	return events

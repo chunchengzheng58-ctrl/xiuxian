@@ -8,6 +8,7 @@ var counters: Array[Label] = []
 var hud_avatar_image: TextureRect
 var hud_name_label: Label
 var hud_family_label: Label
+var reset_demo_button: Button
 
 class FrameTrim extends Control:
 	func _ready() -> void:
@@ -158,6 +159,7 @@ func _build_hud() -> void:
 	realm_style.content_margin_right = 8
 	realm_label.add_theme_stylebox_override("normal", realm_style)
 	day_label = label_into(details, "", 16)
+	game.account_api.play_days_changed.connect(refresh_play_days)
 	hud_family_label = label_into(details, "家人待选择", 12, MUTED)
 	hud_family_label.clip_text = true
 	hud_family_label.custom_minimum_size.x = 124
@@ -173,7 +175,8 @@ func _build_hud() -> void:
 	utility.add_theme_constant_override("separation", 8)
 	add_child(utility)
 	button(utility, "四式说明", open_battle)
-	button(utility, "重置演示", reset_demo)
+	reset_demo_button = button(utility, "重置演示", reset_demo)
+	reset_demo_button.visible = demo_reset_allowed()
 	var tips = card(Rect2(16, 818, 452, 63), self, WOOD)
 	tips.add_theme_constant_override("separation", 4)
 	var tip_style = style(WOOD)
@@ -209,6 +212,8 @@ func _build_hud() -> void:
 
 func refresh() -> void:
 	var state = game.state
+	if is_instance_valid(reset_demo_button):
+		reset_demo_button.visible = demo_reset_allowed()
 	var values = [state.cultivation, state.equipment.qi, state.cleared_bosses.size(), state.seals]
 	var labels := ["修为", "灵气", "首通", "灵印"]
 	if state.is_remote() and state.family_member_id == "self" and not state.adventure.is_empty():
@@ -221,9 +226,18 @@ func refresh() -> void:
 	for i in range(counters.size()):
 		counters[i].text = labels[i] + " " + str(values[i])
 	realm_label.text = "游历 Lv.%d" % int(state.adventure.level) if state.is_remote() and state.family_member_id == "self" and not state.adventure.is_empty() else state.realm()
-	day_label.text = "修行 %d 天" % state.days
+	refresh_play_days()
 	hud_family_label.text = state.member_label() if not state.family_member_id.is_empty() else "我的账号"
 	daily_label.text = "✓  个人计划已确认\n✓  今日奖励已领取" if state.today() in state.rewarded_days else "□  按计划完成记录\n□  确认后领取奖励"
+
+func refresh_play_days() -> void:
+	var total: int = game.account_api.play_days
+	if game.state.is_remote():
+		day_label.text = "游玩 %d 天" % total if total >= 0 else "游玩天数待同步"
+		day_label.tooltip_text = "按北京时间累计，同一天只计一次。"
+	else:
+		day_label.text = "修行 %d 天" % game.state.days
+		day_label.tooltip_text = ""
 
 func update_proximity(id: String) -> void:
 	var names = {"home": "健康档案", "battle": "技能练习", "boss": "属性闯关", "records": "天机碑", "gacha": "聚宝阁"}
@@ -233,12 +247,25 @@ func update_proximity(id: String) -> void:
 	else:
 		hint.text = "E  进入「%s」" % names[id] if names.has(id) else "走近建筑或村民按 E 互动 · 点击下方按钮直接进入"
 
+func demo_reset_allowed() -> bool:
+	# Only the explicit guest/local demonstration may reset its disposable data.
+	# Authenticated account IDs and server-backed cultivators are never demos.
+	if game.state.is_remote() or game.family.is_remote():
+		return false
+	var account_id := str(game.family.account.get("id", ""))
+	return account_id == "guest-demo" or (account_id == "local-child" and not game.family.account_bound)
+
 func reset_demo() -> void:
 	if not game.account_ready:
 		game.ui.open_family()
 		return
+	if not demo_reset_allowed():
+		toast("正式账号不使用演示重置，现有进度已保留。")
+		return
 	close_modal()
-	game.state.reset_demo()
+	if not game.state.reset_demo():
+		toast("当前为正式账号进度，未执行演示重置。")
+		return
 	game.player.position = game.SPAWN
 	game.player.route.clear()
 	game.player.destination_site = ""

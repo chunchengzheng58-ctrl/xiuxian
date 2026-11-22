@@ -20,7 +20,8 @@ config/use_custom_user_dir=true
 config/custom_user_dir_name="Godot/app_userdata/家族修真录 · 像素仙村"
 config/custom_user_dir_name.linux="godot/app_userdata/家族修真录 · 像素仙村"
 config/custom_user_dir_name.bsd="godot/app_userdata/家族修真录 · 像素仙村"
-run/main_scene="res://scenes/main.tscn"
+; 先进入轻量加载界面（开场 CG + 循环小人），主场景在后台线程加载。
+run/main_scene="res://scenes/boot_splash.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 

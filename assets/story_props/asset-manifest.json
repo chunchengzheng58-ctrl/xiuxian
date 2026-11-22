@@ -1,0 +1,47 @@
+{
+  "brief_snapshot": {
+    "path": "docs/STORY_MASTER_MEAL_TIME.md#story-visual-p1-v1",
+    "version": "story-visual-p1-v1",
+    "status": "frozen"
+  },
+  "assets": [
+    {
+      "asset_id": "story-prop-atlas-v1",
+      "purpose": "41个剧情场景与五个关键Boss边角演出共用的正式透明道具素材板；替换代码绘制的粗糙灯笼、树痕、行囊、绳结、空船、地图、棋局、家书与碗筷。",
+      "production_method": "image_generate",
+      "reference_inputs": [],
+      "identity_source": "none",
+      "prompt": "透明背景生成。制作一张4列3排的东方修仙剧情游戏道具素材板，恰好12组独立道具，每组完整分离，不含人物、文字、标签、编号、边框。统一高细节像素彩绘与轻手绘材质，深棕轮廓、克制暖色、自然旧化，三分之四视角，统一左上方暖光；只允许每组下方很轻的接触阴影，不要整体底色。采用0–1000归一化坐标，<point>中心X 中心Y 宽 高</point>表示每组道具的位置和占据范围，标签、坐标和辅助线不画入图片。第一排：<point>125 167 180 220</point>旧木门灯与铜铃；<point>375 167 180 220</point>带两种身高刻痕的老树干局部；<point>625 167 190 210</point>由两个布包组成的一组旅途干粮；<point>875 167 180 200</point>带四个结的旧麻绳卷。第二排：<point>125 500 220 180</point>挂小灯的空木渡船；<point>375 500 200 200</point>展开的旧测绘地图卷，只有路线图与标记，没有文字；<point>625 500 210 200</point>未下完的棋局与两只冷茶杯组成的矮桌；<point>875 500 180 200</point>旧铜司南与指针。第三排：<point>125 833 190 210</point>带红封泥、中央留白的折旧家书；<point>375 833 230 180</point>一只带热气的面碗；<point>625 833 180 180</point>一副单独的旧空碗筷；<point>875 833 190 200</point>药包、干粮与小布袋组成的一组同行行囊。所有组互不接触、不裁切，除上述12组外不增加其他独立道具组。",
+      "target": {
+        "ratio": "4:3",
+        "width": 1536,
+        "height": 1152,
+        "safe_area": "4列3排各自单元格内，组间保留透明间距，任何主体不得越出分配框。"
+      },
+      "consumers": [
+        "scripts/story_prop.gd::41_story_scenes",
+        "scripts/expedition_view.gd::nonblocking_boss_props"
+      ],
+      "acceptance": [
+        "实际读图确认恰好12组，行列与指定道具一一对应，无人物、文字或编号。",
+        "检查真实Alpha，浅底、深底和正式关卡背景上均无大片残底、色边、孔洞或误删。",
+        "各组有效像素在单元格内完整，裁切后结构、材质、光向与配色统一。",
+        "家书中央留白可供Godot原生文字排版，碗筷与书信在实机尺寸下清楚可辨。"
+      ],
+      "postprocess": [
+        "两版原始生成结果均保留来源，不覆盖既有素材；失败的整桌、人形刻痕和多杯单元全部弃用。",
+        "逐项选择合格单元，去除网格边缘24像素串图并清除小于96像素的孤立杂点，保留真实Alpha。",
+        "家书文字由Godot原生渲染；结局三只面碗由同一单碗素材独立摆放并复查数量。"
+      ],
+      "status": "ready",
+      "output": {
+        "uri": "https://aka.doubaocdn.com/s/fFCWVbTVr0",
+        "width": 1773,
+        "height": 1330,
+        "version": "story-props-v1-validated",
+        "alpha": true
+      }
+    }
+  ],
+  "unresolved_blockers": []
+}

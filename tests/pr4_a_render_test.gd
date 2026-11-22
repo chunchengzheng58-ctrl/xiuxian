@@ -66,6 +66,7 @@ func _run() -> void:
 	actor.equipment.draw_count = 1
 	actor.equip_item("gear_000001")
 	scene.ui.activate_family(father.id)
+	scene.account_ready = true
 	await process_frame
 	await capture("village")
 	var life_button: Button = find_button(scene.ui, "渡劫台 / 修行状态")
@@ -102,6 +103,8 @@ func _run() -> void:
 	await capture("ai-practice")
 	scene.ui.close_modal()
 	await process_frame
+	for id in ["b00", "b01", "b02"]:
+		actor.complete_boss(id, {"time": 40.0})
 	scene.ui.start_corridor_boss("b03")
 	await process_frame
 	var combat: Control = scene.ui.combat

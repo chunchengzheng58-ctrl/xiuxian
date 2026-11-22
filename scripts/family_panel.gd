@@ -278,6 +278,7 @@ func field(parent: Node, label: String, placeholder: String, value: String = "",
 	input.add_theme_color_override("font_color", CREAM)
 	input.add_theme_color_override("font_placeholder_color", MUTED_TEXT)
 	parent.add_child(input)
+	preload("res://scripts/mobile_ui.gd").configure_text_input(input)
 	return input
 
 func option(parent: Node, label: String, items: Array, index: int) -> OptionButton:

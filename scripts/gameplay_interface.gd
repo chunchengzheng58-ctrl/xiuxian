@@ -1,5 +1,7 @@
 extends "res://scripts/pixel_interface.gd"
 
+const PtdsSummary = preload("res://scripts/ptds_summary.gd")
+
 const Assets = preload("res://scripts/pixel_assets.gd")
 const TrialCatalogue = preload("res://scripts/trial_catalogue.gd")
 const Combat = preload("res://scripts/combat_view.gd")
@@ -486,7 +488,8 @@ func open_wechat_tasks() -> void:
 	var content = _dialog("每日修行 · 微信记录", state.member_label() + "  ·  " + state.today())
 	if state.family_member_id == "self":
 		paragraph(content, "每日记录来自家人的微信健康助手。请切换到一位家人查看。", 20, BROWN)
-		button(content, "我的家人", open_family, true)
+		button(content, "PTDS 穿戴摘要", open_ptds_record, true)
+		button(content, "我的家人", open_family)
 		return
 	wechat_task_label = paragraph(content, "正在读取微信同步记录…", 18, BROWN)
 	wechat_task_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -497,6 +500,55 @@ func open_wechat_tasks() -> void:
 	button(actions, "绑定老人微信（扫码）", func(): bind_wechat(state))
 	paragraph(content, "老人用微信扫码后，日常在微信里告诉健康助手完成情况即可；核验通过后灵气自动到账。两项记录每天共享一次奖励：修为 +10、灵印 +1、灵气 +100。", 15)
 	refresh_wechat_tasks(state)
+
+func open_ptds_record() -> void:
+	var state = game.state
+	var content = _dialog("PTDS 穿戴摘要", "仅本人可确认当天记录。步数和睡眠时长在本机预览。")
+	var preview = paragraph(content, "请选择本人从 PTDS 导出的 JSON。", 20, BROWN)
+	var selection := {"date": "", "busy": false}
+	var controls := {}
+	var accept_summary := func(summary: Dictionary):
+		preview.text = summary.message
+		selection.date = summary.get("date", "")
+		controls.confirm.disabled = selection.date != state.today()
+	var picker := FileDialog.new()
+	picker.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	picker.access = FileDialog.ACCESS_FILESYSTEM
+	picker.add_filter("*.json", "PTDS 摘要")
+	content.add_child(picker)
+	picker.file_selected.connect(func(path: String): accept_summary.call(PtdsSummary.read_file(path)))
+	var choose = button(content, "选择摘要 JSON", func(): picker.popup_centered(Vector2i(720, 480)))
+	if OS.has_feature("web"):
+		choose.queue_free()
+		var receive := JavaScriptBridge.create_callback(func(args: Array):
+			if is_instance_valid(preview) and preview.is_visible_in_tree() and not selection.busy:
+				accept_summary.call(PtdsSummary.preview(str(args[1])) if args[0] else {"message": str(args[1])})
+		)
+		content.set_meta("ptds_callback", receive)
+		choose = button(content, "选择摘要 JSON", func():
+			var window := JavaScriptBridge.get_interface("window")
+			window.xiuxianPickPtdsSummary(receive)
+		)
+	var confirm = button(content, "确认本人今日记录", func():
+		if selection.busy or selection.date != state.today() or game.state != state:
+			return
+		selection.busy = true
+		var result = await game.account_api.api.request_api("/api/v2/ptds/confirm", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id, "date": selection.date})
+		selection.busy = false
+		if result.ok:
+			await game.account_api.sync_family(game.family)
+			refresh()
+		if not is_instance_valid(preview) or game.state != state:
+			return
+		preview.text = "今日 PTDS 记录已确认。重复确认不会再次结算。" if result.ok else str(result.message)
+		if result.ok:
+			selection.date = ""
+			controls.confirm.disabled = true
+	, true)
+	controls.confirm = confirm
+	confirm.disabled = true
+	button(content, "返回每日修行", open_record)
+
 
 func refresh_wechat_tasks(state) -> void:
 	var result = await GameKernel.dispatch("quests.family_today", {"date": state.today()})

@@ -89,6 +89,9 @@ func _village_flow() -> void:
 	dad.equipment.next_id = 2
 	dad.equip_item("gear_000001")
 	expect(scene.ui.activate_family(father.id), "real UI selects father")
+	scene.account_ready = true
+	for id in ["b00", "b01", "b02"]:
+		dad.complete_boss(id, {"time": 40.0})
 	scene.ui.start_corridor_boss("b03")
 	await process_frame
 	expect(is_instance_valid(scene.ui.combat) and scene.ui.combat.rules.stats == dad.battle_stats(), "PR4 combat consumes exact final gear snapshot")
@@ -110,13 +113,14 @@ func _village_flow() -> void:
 	scene.ui.start_companion_practice()
 	await process_frame
 	var training: Control = scene.ui.combat
+	var clears_before: int = dad.cleared_bosses.size()
 	expect(training.mode == "practice" and training.companion != null, "AI support is available through the actual PR4 practice entrance")
 	var hp_before: int = training.rules.boss_hp
 	var contribution_before: int = dad.contribution
 	var mana_before: float = training.rules.mp
 	training._process(1.9)
 	expect(training.rules.boss_hp < hp_before and training.rules.mp == mana_before, "companion attacks without consuming the player's mana")
-	expect(dad.contribution == contribution_before and dad.cleared_bosses.is_empty(), "companion practice grants no progression or contribution")
+	expect(dad.contribution == contribution_before and dad.cleared_bosses.size() == clears_before, "companion practice grants no progression or contribution")
 	scene.ui.close_modal()
 	await process_frame
 	scene.ui.start_battle()
@@ -220,6 +224,7 @@ func _village_flow() -> void:
 	expect(stale.code == "ROLE_CHANGED" and mom.lifecycle_record().state == "cultivating", "stale panel cannot change newly selected elder")
 	await process_frame
 	var path := "res://work/pr4-integration/lifecycle-family-fixture.json"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	scene.family.persist_enabled = true
 	scene.family.save_file_override = path
 	expect(scene.family.save_game(), "full family including new lifecycle persists")

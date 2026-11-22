@@ -11,12 +11,12 @@ func on_backend_changed() -> void:
 	_pending_keys.clear()
 
 func execute(command: String, payload: Dictionary) -> Dictionary:
-	if command not in ["story.snapshot", "story.advance"]:
+	if command not in ["story.snapshot", "story.advance", "story.variant"]:
 		return await super.execute(command, payload)
 	var session := _session
 	var signature := JSON.stringify(payload, "", true)
 	var key := ""
-	if command == "story.advance":
+	if command in ["story.advance", "story.variant"]:
 		if not _pending_keys.has(signature):
 			_pending_keys[signature] = Crypto.new().generate_random_bytes(16).hex_encode()
 		key = _pending_keys[signature]
