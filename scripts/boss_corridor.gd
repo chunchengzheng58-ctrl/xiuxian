@@ -239,6 +239,10 @@ func refresh() -> void:
 		portal_landscapes[index].modulate = Color(.7, .7, .7) if unlocked else Color(.30, .32, .34)
 		jump_buttons[index].text = "%02d" % (index + 1)
 	progress_label.text = "%s  ·  %s  ·  已开放 %d / 20  ·  首通 %d / 20  ·  通关前一关解锁下一关" % [game.state.player_name, game.state.realm(), game.state.unlocked_boss_count(), game.state.cleared_bosses.size()]
+	if not game.state.allows_battle():
+		var phase: String = str(game.state.lifecycle_record().state)
+		var reason: String = {"tribulation": "正在渡劫", "seclusion": "正在闭关", "ascended": "已飞升"}.get(phase, "状态待同步")
+		progress_label.text += "  ·  %s，需切换修行中的角色开战" % reason
 
 func focus_boss(index: int) -> void:
 	var selected = clampi(index, 0, 19)
