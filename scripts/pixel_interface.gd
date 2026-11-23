@@ -159,6 +159,7 @@ func _build_hud() -> void:
 	realm_style.content_margin_right = 8
 	realm_label.add_theme_stylebox_override("normal", realm_style)
 	day_label = label_into(details, "", 16)
+	game.account_api.play_days_changed.connect(refresh_play_days)
 	hud_family_label = label_into(details, "家人待选择", 12, MUTED)
 	hud_family_label.clip_text = true
 	hud_family_label.custom_minimum_size.x = 124
@@ -225,9 +226,18 @@ func refresh() -> void:
 	for i in range(counters.size()):
 		counters[i].text = labels[i] + " " + str(values[i])
 	realm_label.text = "游历 Lv.%d" % int(state.adventure.level) if state.is_remote() and state.family_member_id == "self" and not state.adventure.is_empty() else state.realm()
-	day_label.text = "修行 %d 天" % state.days
+	refresh_play_days()
 	hud_family_label.text = state.member_label() if not state.family_member_id.is_empty() else "我的账号"
 	daily_label.text = "✓  个人计划已确认\n✓  今日奖励已领取" if state.today() in state.rewarded_days else "□  按计划完成记录\n□  确认后领取奖励"
+
+func refresh_play_days() -> void:
+	var total: int = game.account_api.play_days
+	if game.state.is_remote():
+		day_label.text = "游玩 %d 天" % total if total >= 0 else "游玩天数待同步"
+		day_label.tooltip_text = "按北京时间累计，同一天只计一次。"
+	else:
+		day_label.text = "修行 %d 天" % game.state.days
+		day_label.tooltip_text = ""
 
 func update_proximity(id: String) -> void:
 	var names = {"home": "健康档案", "battle": "技能练习", "boss": "属性闯关", "records": "天机碑", "gacha": "聚宝阁"}
