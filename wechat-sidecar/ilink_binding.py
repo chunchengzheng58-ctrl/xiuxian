@@ -65,6 +65,30 @@ def _save_credentials(record: dict) -> None:
     os.replace(temporary, CREDENTIALS)
 
 
+def _credential_keys() -> set[str]:
+    if not CREDENTIALS.exists():
+        return set()
+    try:
+        return set(json.loads(CREDENTIALS.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return set()
+
+
+def _forget_credentials(key: str) -> None:
+    # 网关按凭证逐 Bot 起轮询线程：残留一条就是"一个 Bot 挂着没绑定的账号"。
+    if not CREDENTIALS.exists():
+        return
+    try:
+        existing = json.loads(CREDENTIALS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if existing.pop(key, None) is None:
+        return
+    temporary = CREDENTIALS.with_suffix(".tmp")
+    temporary.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, CREDENTIALS)
+
+
 def start(invite_token: str) -> dict:
     response = requests.post(ILINK_BASE + "/ilink/bot/get_bot_qrcode?bot_type=3", json={"local_token_list": []}, headers=_headers(True), timeout=10)
     data = response.json()
@@ -93,7 +117,9 @@ def poll(bind_id: str) -> dict:
     if status != "confirmed":
         return {"status": status}
     bot_id, user_id = str(data["ilink_bot_id"]), str(data["ilink_user_id"])
-    _save_credentials({"ilink_bot_id": bot_id, "ilink_user_id": user_id, "bot_token": data["bot_token"], "baseurl": data.get("baseurl", session["base"])})
+    key = bot_id + ":" + user_id
+    record = {"ilink_bot_id": bot_id, "ilink_user_id": user_id, "bot_token": data["bot_token"], "baseurl": data.get("baseurl", session["base"])}
+    previously_bound = key in _credential_keys()
     try:
         binding = bridge.game_post("/internal/v1/bindings/confirm", {
             "invite_token": session["invite_token"], "channel": "wechat_ilink", "channel_account_id": bot_id, "sender_id": user_id,
@@ -101,8 +127,14 @@ def poll(bind_id: str) -> dict:
             "health_processing": True, "ai_processing": True})
         bridge.save_route({"binding_id": binding["binding_id"], "elder_id": elder_ref(bot_id, user_id), "sender_id": user_id,
                            "channel_account_id": bot_id, "target": user_id, "consent_version": binding["consent_version"]})
+        # C 侧绑定与本地路由都成立后才落凭证，网关也才据此开始收发这个 Bot。
+        _save_credentials(record)
         session.update(status="bound", binding_id=binding["binding_id"])
     except (bridge.BridgeError, OSError) as error:
+        # 这次扫码没产生有效绑定，就别留下能收发的孤儿 Bot；
+        # 该身份此前若已绑定过（重复扫码被 409 拒绝），保留原有凭证。
+        if not previously_bound:
+            _forget_credentials(key)
         session.update(status="failed", code=str(error))
     session.pop("invite_token", None)
     return {"status": session["status"], "binding_id": session.get("binding_id", ""), "code": session.get("code", "")}

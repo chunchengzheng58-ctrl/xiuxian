@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ilink_binding  # noqa: E402
+import ilink_gateway  # noqa: E402
 
 
 class FakeResponse:
@@ -26,6 +27,7 @@ class BindingTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         ilink_binding.bridge.STATE_PATH = Path(self.temp.name) / "bridge.sqlite3"
         ilink_binding.CREDENTIALS = Path(self.temp.name) / "ilink.json"
+        ilink_gateway.CREDENTIALS = ilink_binding.CREDENTIALS
         os.environ["ELDER_BINDINGS"] = "[]"
         self.db_path = Path(self.temp.name) / "elder.sqlite3"
         with self.database() as conn:
@@ -54,6 +56,29 @@ class BindingTest(unittest.TestCase):
                 patch.object(ilink_binding.bridge, "game_post", side_effect=lambda path, body: calls.append((path, body)) or {"binding_id": "binding_1", "consent_version": 1}):
             result = ilink_binding.poll(started["bind_id"])
         return result, calls
+
+    def rejected_bind(self, error):
+        with patch.object(ilink_binding.requests, "post", return_value=FakeResponse({"qrcode": "q", "qrcode_img_content": "https://liteapp/q"})):
+            started = ilink_binding.start("invite-token-1234567890")
+        confirmed = {"status": "confirmed", "ilink_bot_id": "bot@im.bot", "ilink_user_id": "elder@im.wechat", "bot_token": "secret"}
+        with patch.object(ilink_binding.requests, "get", return_value=FakeResponse(confirmed)), \
+                patch.object(ilink_binding.bridge, "game_post", side_effect=error):
+            return ilink_binding.poll(started["bind_id"])
+
+    def test_rejected_scan_leaves_no_bot_credential(self):
+        result = self.rejected_bind(ilink_binding.bridge.BridgeError("BINDING_CONFLICT"))
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(ilink_binding._credential_keys(), set())
+        # 网关按凭证逐 Bot 起轮询线程：没绑定就不能有 Bot 可收消息。
+        self.assertEqual(ilink_gateway._load_credentials(), [])
+
+    def test_repeat_scan_conflict_keeps_existing_credential(self):
+        self.bind()
+        self.assertEqual(ilink_binding._credential_keys(), {"bot@im.bot:elder@im.wechat"})
+        result = self.rejected_bind(ilink_binding.bridge.BridgeError("BINDING_CONFLICT"))
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(ilink_binding._credential_keys(), {"bot@im.bot:elder@im.wechat"})
+        self.assertEqual(len(ilink_gateway._load_credentials()), 1)
 
     def test_scan_confirms_binding_without_elder_code(self):
         result, calls = self.bind()
