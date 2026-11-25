@@ -25,10 +25,10 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 export type FighterStats = { life: number; spirit: number; stamina: number; attack: number; defense: number };
 type ArenaOptions = { stats?: [FighterStats, FighterStats]; fightSeconds?: number; reconnectSeconds?: number; practiceStyle?: number };
 const practiceStyles = [
-  { pace: .57, hesitation: 7, attackDelay: 35, turn: 1 },
-  { pace: .64, hesitation: 5, attackDelay: 38, turn: -1 },
-  { pace: .52, hesitation: 8, attackDelay: 31, turn: -1 },
-  { pace: .60, hesitation: 6, attackDelay: 40, turn: 1 },
+  { pace: .61, reaction: 6, attackDelay: 28, turn: 1, range: 106, dashRange: 242, healBelow: .44 },
+  { pace: .70, reaction: 7, attackDelay: 33, turn: -1, range: 88, dashRange: 190, healBelow: .36 },
+  { pace: .53, reaction: 5, attackDelay: 32, turn: -1, range: 151, dashRange: 302, healBelow: .51 },
+  { pace: .63, reaction: 8, attackDelay: 27, turn: 1, range: 122, dashRange: 266, healBelow: .40 },
 ] as const;
 function fighter(x: number, facing: number, stats: FighterStats = { life: 100, spirit: 100, stamina: 100, attack: 12, defense: 0 }): Fighter {
   return {
@@ -122,23 +122,63 @@ export class ArenaMatch {
 
   private drivePracticeOpponent(style: typeof practiceStyles[number]) {
     if (this.tick < this.botNextMove) return;
-    this.botNextMove = this.tick + style.hesitation;
+    this.botNextMove = this.tick + style.reaction;
     const [player, bot] = this.fighters;
     const dx = player.x - bot.x;
     const dy = player.y - bot.y;
     const distance = Math.hypot(dx, dy);
-    const speed = distance > 104 ? style.pace : distance < 74 ? -.12 : .13;
-    const circle = distance > 165 ? 0 : .22 * style.turn * Math.sin(this.tick * .07);
+    const ux = dx / Math.max(distance, 1);
+    const uy = dy / Math.max(distance, 1);
+    const facingBot = -ux * player.fx - uy * player.fy > .2;
+    const meleeThreat = distance < 142 && facingBot && player.windup > 0;
+    const projectileThreat = this.blades.some(blade => {
+      if (blade.owner !== 0) return false;
+      const offsetX = bot.x - blade.x;
+      const offsetY = bot.y - blade.y;
+      const ahead = offsetX * blade.fx + offsetY * blade.fy;
+      return ahead >= 0 && ahead < 172 && Math.abs(offsetX * blade.fy - offsetY * blade.fx) < 50;
+    });
+    const needsHeal = bot.hp < bot.maxHp * style.healBelow && bot.mp >= mana[5]! && bot.cd[5] === 0;
+    const free = !bot.windup && !bot.dash && !bot.heal;
+    const ready = (action: number) => bot.cd[action] === 0 && bot.mp >= mana[action]!;
+    const canDash = ready(3) && bot.stamina >= 24;
+    let forward = distance > style.range + 18 ? style.pace : distance < style.range - 22 ? -.31 : .11;
+    let lateral = distance <= 220 ? style.turn * (Math.floor(this.tick / 75) % 2 ? -.32 : .32) : 0;
+    if (needsHeal && distance < 185 && bot.shield < 12) forward = -.62;
     let action = 0;
-    if (this.tick >= this.botNextAttack && distance <= 112 && bot.cd[1] === 0) {
-      action = 1;
-      this.botNextAttack = this.tick + style.attackDelay + this.tick % 11;
+    if (free && (meleeThreat || projectileThreat) && bot.shield === 0) {
+      if (canDash && (projectileThreat || needsHeal)) {
+        action = 3;
+        forward = -.36;
+        lateral = style.turn * .79;
+        const landingY = bot.y + 150 * (uy * forward + ux * lateral);
+        if (landingY < arenaBounds.top || landingY > arenaBounds.bottom) lateral = -lateral;
+      } else if (ready(4)) {
+        action = 4;
+        forward = -.27;
+      }
     }
-    const forward = action === 0 ? speed : Math.max(.13, speed);
-    const lateral = action === 0 ? circle : 0;
+    if (free && action === 0 && this.tick >= this.botNextAttack) {
+      if (needsHeal && (distance > 185 || bot.shield >= 12)) {
+        action = 5;
+        forward = -.48;
+      } else if (!needsHeal && distance > style.dashRange && distance < 410 && canDash && this.tick % 3 !== 0) {
+        action = 3;
+        forward = .86;
+        lateral = 0;
+      } else if (distance >= 104 && distance <= 385 && ready(2) && !player.dash && (!needsHeal || distance > 160)) {
+        action = 2;
+        forward = .22;
+        lateral = 0;
+      } else if (!needsHeal && distance <= 118 && ready(1)) {
+        action = 1;
+        forward = .17;
+        lateral = 0;
+      }
+    }
+    if (action) this.botNextAttack = this.tick + style.attackDelay + this.tick % 9;
     this.input(1, {
-      seq: bot.seq + 1, x: (dx * forward - dy * lateral) / Math.max(distance, 1),
-      y: (dy * forward + dx * lateral) / Math.max(distance, 1), action,
+      seq: bot.seq + 1, x: ux * forward - uy * lateral, y: uy * forward + ux * lateral, action,
     });
   }
 

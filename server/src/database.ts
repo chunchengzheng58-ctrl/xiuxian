@@ -440,6 +440,15 @@ INSERT OR IGNORE INTO account_play_days (account_id, day)
     UNION ALL SELECT challenger_id, created_at FROM arena_duels WHERE status = 'finished'
     UNION ALL SELECT opponent_id, created_at FROM arena_duels WHERE status = 'finished' AND opponent_id IS NOT NULL
   ) play JOIN cultivators c ON c.id = play.cultivator_id;
+`, String.raw`
+-- 14: persist the current arena standings of virtual entrants.
+CREATE TABLE arena_practice_ratings (
+  profile_id TEXT PRIMARY KEY,
+  rating INTEGER NOT NULL CHECK(rating >= 0),
+  wins INTEGER NOT NULL CHECK(wins >= 0),
+  losses INTEGER NOT NULL CHECK(losses >= 0),
+  draws INTEGER NOT NULL CHECK(draws >= 0)
+);
 `];
 
 export class Database {

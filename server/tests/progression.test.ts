@@ -96,7 +96,7 @@ test('v9旧档无损追加迁移，旧三关历练只补记一次，二十关约
   old.close();
   const db = new Database(path);
   try {
-    assert.equal(db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 13);
+    assert.equal(db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 14);
     assert.deepEqual(db.all<{ day: string }>("SELECT day FROM account_play_days WHERE account_id='a'").map(row => row.day), ['1970-01-01']);
     assert.deepEqual(db.get("SELECT * FROM cultivators WHERE id='c'"), oldCharacter);
     assert.deepEqual(db.all('SELECT * FROM equipment'), oldGear);

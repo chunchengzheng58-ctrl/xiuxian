@@ -36,14 +36,16 @@ const additional = nicknames.map((id): PracticeIdentity => {
 });
 
 export const practiceRoster = [...previousRoster, ...additional].map(profile => {
-  const seed = stableSeed(profile.id);
-  const play_days = 2 + seed % 96;
-  const level = Math.min(campaignConfig.progression.thresholds.length, Math.max(1, Math.floor(Math.sqrt(play_days)) + (seed >>> 8) % 5 - 1));
-  const rating = 820 + (seed >>> 7) % 189;
-  const matches = 5 + Math.floor(play_days * 0.6) + (seed >>> 17) % 9;
-  const draws = (seed >>> 24) % 4;
+  const traits = digest(`arena-standing-v2:${profile.id}`).match(/.{4}/g)!.slice(0, 6).map(value => Number.parseInt(value, 16) / 65_536);
+  const [frequency, sessionsPerDay, experience, skill, consistency, evenMatches] = traits as [number, number, number, number, number, number];
+  const play_days = 1 + Math.floor(26 * frequency ** 1.45);
+  const level = Math.min(campaignConfig.progression.thresholds.length, 1 + Math.floor(play_days * (.24 + .36 * experience)));
+  const matches = Math.max(1, Math.round(play_days * (1.1 + 4.1 * sessionsPerDay) + 5 * experience));
+  const draws = Math.floor(matches * (.015 + .08 * evenMatches));
   const decisiveMatches = matches - draws;
-  const wins = Math.round(decisiveMatches * (0.30 + (rating - 820) / 800));
+  const wins = Math.round(decisiveMatches * (.24 + .20 * experience + .24 * skill));
   const losses = decisiveMatches - wins;
+  const winRate = (wins + 2) / (decisiveMatches + 4);
+  const rating = Math.round(635 + 10 * play_days + 2.25 * matches + 930 * (winRate - .30) + 90 * consistency);
   return { ...profile, play_days, level, rating, wins, losses, draws };
 });
