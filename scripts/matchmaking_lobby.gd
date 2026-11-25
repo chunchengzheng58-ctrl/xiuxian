@@ -137,10 +137,15 @@ func render() -> void:
 		row.add_theme_constant_override("separation", 16)
 		content.add_child(row)
 		ui.label_into(row, "%02d" % int(leader.rank), 19).custom_minimum_size.x = 40
-		var name_label: Label = ui.label_into(row, str(leader.alias), 19)
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var identity := VBoxContainer.new()
+		identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		identity.add_theme_constant_override("separation", 2)
+		row.add_child(identity)
+		var name_label: Label = ui.label_into(identity, str(leader.alias), 19)
 		name_label.clip_text = true
 		name_label.tooltip_text = str(leader.alias)
+		if leader.has("level") and leader.has("play_days"):
+			ui.label_into(identity, "Lv.%d  ·  游玩 %d 天" % [int(leader.level), int(leader.play_days)], 15)
 		ui.label_into(row, "%d 分" % int(leader.rating), 19).custom_minimum_size.x = 100
 		ui.label_into(row, "%d 胜 %d 负 %d 平" % [int(leader.wins), int(leader.losses), int(leader.draws)], 17).custom_minimum_size.x = 190
 

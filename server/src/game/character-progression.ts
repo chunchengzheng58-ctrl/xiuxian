@@ -31,6 +31,12 @@ requireCondition(thresholds[0] === 0 && thresholds.every((value, index) => Numbe
   && campaignConfig.stages.length === 20 && new Set(campaignConfig.stages.map(stage => stage.stage_id)).size === 20,
 'INVALID_CAMPAIGN', '冒险规则配置无效', 500);
 
+export function adventureLevelForXp(xp: number) {
+  let level = 1;
+  while (level < thresholds.length && xp >= thresholds[level]!) level++;
+  return level;
+}
+
 export function campaignUnlock(stage: CampaignStage, cleared: Set<string>) {
   // A previously earned clear always remains available, even if a future chapter adds a prerequisite.
   if (cleared.has(stage.stage_id)) return '';
@@ -47,8 +53,7 @@ export class CharacterProgression {
   view(actor: Character) {
     const xp = this.db.get<{ xp: number }>('SELECT COALESCE(SUM(amount), 0) AS xp FROM adventure_awards WHERE cultivator_id = ?', actor.id)!.xp;
     const cleared = this.db.all<{ stage_id: string }>('SELECT stage_id FROM expedition_clears WHERE cultivator_id = ? ORDER BY stage_id', actor.id).map(row => row.stage_id);
-    let level = 1;
-    while (level < thresholds.length && xp >= thresholds[level]!) level++;
+    const level = adventureLevelForXp(xp);
     const atMax = level === thresholds.length;
     const title = [...campaignConfig.progression.titles].reverse().find(row => row.level <= level)!.title;
     return { version: campaignConfig.version, xp, level, title, max_level: thresholds.length,
