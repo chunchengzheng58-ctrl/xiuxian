@@ -315,6 +315,27 @@ def _quick_replies(intent: str, risk_level: str = "routine") -> List[Dict[str, s
     return [{"label": "好的", "value": "好的"}, {"label": "联系家人", "value": "联系家人"}]
 
 
+# 确认引导：微信纯文本通道传不了 quick reply 按钮，靠这句话让老人知道该回什么。
+_CONFIRM_MARKERS = ("回我", "确认", "对吗", "对不对", "是吧", "是不是", "告诉我一声", "跟我说一声")
+_CONFIRM_HINTS = {
+    "medication_taken": "要是刚说的对，回我个「是」；还没吃就说「还没吃」。",
+    "meal_log": "要是没记错，回我个「是」就行。",
+    "measurement": "要是数值没量错，回我个「是」就行。",
+    "symptom": "要是说得对，回我个「是」就行。",
+    "photo_review": "要是照片里认得对，回我个「是」就行。",
+}
+_DEFAULT_CONFIRM_HINT = "要是对，回我个「是」就行。"
+
+
+def _ensure_confirm_hint(reply: str, intent: str) -> str:
+    """模型回复里没有确认引导时补一句，避免待确认事件静默挂起。"""
+    text = (reply or "").strip()
+    if any(marker in text for marker in _CONFIRM_MARKERS):
+        return text
+    hint = _CONFIRM_HINTS.get(intent, _DEFAULT_CONFIRM_HINT)
+    return f"{text} {hint}".strip() if text else hint
+
+
 # 老人端人设：先像家人朋友一样正常聊天，别每句都追问身体。
 _ELDER_PERSONA = (
     "你是陪老人聊天的小助手，先像家人朋友一样正常聊天，用短句，亲切自然。"
@@ -1231,6 +1252,8 @@ def handle_message(payload: Dict[str, Any]) -> Dict[str, Any]:
                     reply = "这个数我听到了，我记下啦；要是没量准，先再量一次。"
                 else:
                     reply = "我大概听明白了。"
+            # 微信文本通道没有快捷按钮，模型那句闲聊经常不带确认引导，这里补一句。
+            reply = _ensure_confirm_hint(reply, intent)
         if risk_level == "urgent":
             reply = "你说的情况建议尽快联系家人或医疗机构确认。" + reply
     else:

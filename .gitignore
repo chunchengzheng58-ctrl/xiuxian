@@ -39,3 +39,6 @@ Desktop.ini
 /build/
 /output/a-backend-*/
 /output/account-test-*/
+
+# Local assistant workspace data (logs, memory).
+.workbuddy/
