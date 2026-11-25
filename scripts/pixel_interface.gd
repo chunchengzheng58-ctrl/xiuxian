@@ -199,6 +199,8 @@ func _build_hud() -> void:
 	hint.add_theme_color_override("font_outline_color", Color("382e25"))
 	hint.add_theme_constant_override("outline_size", 6)
 	toast_label = label_into(self, "", 18, Color("fff0cf"))
+	toast_label.z_index = 2000
+	toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	toast_label.position = Vector2(391, 91)
 	toast_label.size = Vector2(658, 46)
 	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
