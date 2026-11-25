@@ -53,7 +53,7 @@ func request_api(path: String, method: int = HTTPClient.METHOD_GET, payload: Dic
 		return Result.failure("BACKEND_UNAVAILABLE", "尚未配置游戏后端")
 	if not is_inside_tree():
 		return Result.failure("NOT_READY", "HTTP 适配器需要挂在场景树中")
-	if not Contracts.is_json(payload):
+	if method != HTTPClient.METHOD_GET and not Contracts.is_json(payload):
 		return Result.failure("INVALID_PAYLOAD", "请求必须是 JSON 数据")
 	if not path.begins_with("/api/v2/") or ".." in path or "\n" in path or "\r" in path:
 		return Result.failure("INVALID_PATH", "只允许游戏域接口")

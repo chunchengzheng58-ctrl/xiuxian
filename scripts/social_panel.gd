@@ -98,12 +98,15 @@ func show_view(next: String, selected: String = "") -> void:
 
 func render_world() -> void:
 	var epoch := view_epoch
+	clear_rows()
+	status.text = "正在读取世界频道…"
 	var result: Dictionary = await game.account_api.api.request_api("/api/v2/social/world?limit=30")
 	if epoch != view_epoch or not is_instance_valid(rows):
 		return
 	if not result.ok:
 		status.text = str(result.message)
 		return
+	status.text = ""
 	clear_rows()
 	var message := line_edit(rows, "写一条世界频道消息", 500)
 	ui.button(rows, "发送", func(): community_write("/api/v2/social/world/messages", {"body": message.text.strip_edges()}))
@@ -118,12 +121,15 @@ func refresh_current() -> void:
 
 func render_communities() -> void:
 	var epoch := view_epoch
+	clear_rows()
+	status.text = "正在读取社群…"
 	var result: Dictionary = await game.account_api.api.request_api("/api/v2/social/communities")
 	if epoch != view_epoch or not is_instance_valid(rows):
 		return
 	if not result.ok:
 		status.text = str(result.message)
 		return
+	status.text = ""
 	for child in rows.get_children():
 		rows.remove_child(child)
 		child.queue_free()
