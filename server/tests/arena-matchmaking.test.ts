@@ -6,7 +6,11 @@ import { buildApp } from '../src/app.js';
 import { repositoryRoot } from '../src/contracts.js';
 import { secret } from '../src/core.js';
 import { ArenaService, type ArenaSubscription } from '../src/game/arena.js';
+import { practiceRoster } from '../src/game/arena-practice-roster.js';
 import { fixture } from './helpers.js';
+
+const practiceIds = new Set(practiceRoster.map(row => row.id));
+const practiceAhead = (rating: number) => practiceRoster.filter(row => row.rating > rating).length;
 
 async function players(context: TestContext) {
   const app = await fixture(context);
@@ -80,7 +84,7 @@ test('公开匹配：无好友也能排队、重试不续期、双方进入相�
   assert.deepEqual(result.rating_change,{before:1000,after:1012,delta:12});
   const before=await left.send('combat.matchmaking_lobby');
   assert.deepEqual(before.rating,{rating:1012,wins:1,losses:0,draws:0,rank:1});
-  assert.deepEqual((await right.send('combat.matchmaking_lobby')).rating,{rating:988,wins:0,losses:1,draws:0,rank:2});
+  assert.deepEqual((await right.send('combat.matchmaking_lobby')).rating,{rating:988,wins:0,losses:1,draws:0,rank:2 + practiceAhead(988)});
   for(let retry=0;retry<3;retry++){
     await left.send('combat.duel_leave',{match_id:matchId});
     app.game.arena.step(10);
@@ -151,7 +155,7 @@ test('公开匹配：平局与认输按权威终态计分，好友切磋不计�
   const forfeit=await pair(setup);enter(app,forfeit.first,forfeit.second);
   await left.send('combat.duel_leave',{match_id:forfeit.matchId});
   const ranked=await left.send('combat.matchmaking_lobby');
-  assert.deepEqual(ranked.rating,{rating:988,wins:0,losses:1,draws:1,rank:2});
+  assert.deepEqual(ranked.rating,{rating:988,wins:0,losses:1,draws:1,rank:2 + practiceAhead(988)});
   await left.send('social.invite',{invite_code:(await right.send('social.home')).profile.invite_code});
   const relation=(await right.send('social.home')).requests[0].relation_id;
   await right.send('social.respond',{relation_id:relation,action:'accept'});
@@ -192,8 +196,8 @@ test('公开匹配：排队会话失效/生命周期变化清除，积分差距�
   app.advance(15);app.game.arena.step(1);
   const leftBot=(await sendLeft('combat.matchmaking_lobby')).active;
   const rightBot=(await right.send('combat.matchmaking_lobby')).active;
-  assert.match(leftBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
-  assert.match(rightBot.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
+  assert.ok(practiceIds.has(leftBot.opponent));
+  assert.ok(practiceIds.has(rightBot.opponent));
   assert.ok(!('bot' in leftBot));
   assert.notEqual(leftBot.match_id,rightBot.match_id);
 });
@@ -210,7 +214,7 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   app.game.arena.step(1);
   const { active, queue } = await left.send('combat.matchmaking_lobby');
   assert.equal(queue, null);
-  assert.match(active.opponent, /^[\p{Script=Han}A-Za-z]+_?\d{0,4}$/u);
+  assert.ok(practiceIds.has(active.opponent));
   assert.ok(!('bot' in active));
   assert.equal(app.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 2);
   assert.equal(app.db.get<{ opponent_alias: string }>('SELECT opponent_alias FROM arena_duels WHERE id = ?', active.match_id)?.opponent_alias, active.opponent);
@@ -230,13 +234,19 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   assert.equal(finished.rating_change, null);
   const lobby = await left.send('combat.matchmaking_lobby');
   assert.deepEqual(lobby.rating, before);
-  assert.deepEqual(lobby.leaderboard, []);
+  assert.equal(lobby.leaderboard.length, 30);
+  assert.ok(lobby.leaderboard.every((entry: { alias: string }) => practiceIds.has(entry.alias)));
   assert.equal(lobby.recent[0].opponent, active.opponent);
   assert.equal(lobby.recent[0].mode, 'ranked');
   assert.equal(lobby.recent[0].rating_delta, null);
 });
 
-test('八名虚拟玩家轮换，战绩保存到原账号并可重开读取', async () => {
+test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', async () => {
+  assert.equal(practiceRoster.length, 100);
+  assert.equal(practiceIds.size, 100);
+  assert.equal(new Set(practiceRoster.map(row => row.style)).size, 4);
+  assert.ok(new Set(practiceRoster.map(row => row.level)).size >= 8);
+  assert.ok(new Set(practiceRoster.map(row => row.play_days)).size >= 40);
   const testDirectory = join(repositoryRoot, 'work/arena-history-tests');
   mkdirSync(testDirectory, { recursive: true });
   let now = 1795255200;
@@ -253,7 +263,7 @@ test('八名虚拟玩家轮换，战绩保存到原账号并可重开读取', as
     actorId = created.cultivator_id;
     const actor = first.game.own(account_id, actorId);
     first.game.social.saveProfile(actor, '试剑者', false);
-    for (let round = 0; round < 9; round++) {
+    for (let round = 0; round <= 100; round++) {
       first.game.arena.matchmakingJoin(actor);
       now += 15;
       first.game.arena.step(1);
@@ -264,18 +274,21 @@ test('八名虚拟玩家轮换，战绩保存到原账号并可重开读取', as
       const fight = first.game.arena.state(entry)!;
       assert.equal(fight.phase, 'fighting');
       assert.equal(fight.names[1], active.opponent);
-      if (round < 8) assert.equal(encountered.has(active.opponent), false);
-      else assert.equal(encountered.get(active.opponent), fight.avatars[1]);
+      if (round < 100) assert.equal(encountered.has(active.opponent), false);
+      else {
+        assert.equal(active.opponent, [...encountered.keys()][0]);
+        assert.equal(encountered.get(active.opponent), fight.avatars[1]);
+      }
       encountered.set(active.opponent, fight.avatars[1]!);
       const result = first.game.arena.leave(actor, active.match_id);
       assert.equal(result.rating_delta, null);
       assert.equal(result.opponent, active.opponent);
       history.unshift({ match_id: active.match_id, opponent: active.opponent, reason: 'forfeit', winner: 1 });
     }
-    assert.equal(encountered.size, 8);
+    assert.equal(encountered.size, 100);
     assert.deepEqual(new Set(encountered.values()), new Set(['male', 'female']));
     assert.equal(first.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 1);
-    const legacy = history.at(-1)!;
+    const legacy = history[9]!;
     first.db.run("UPDATE arena_duels SET opponent_alias = '一叶归舟7183' WHERE id = ?", legacy.match_id);
     legacy.opponent = '一叶归舟7183';
   } finally { await first.app.close(); }
@@ -288,15 +301,26 @@ test('八名虚拟玩家轮换，战绩保存到原账号并可重开读取', as
       payload: { version: 1, command: 'combat.matchmaking_lobby', payload: { cultivator_id: actorId } } });
     assert.equal(response.statusCode, 200);
     const lobby = response.json().data as ReturnType<ArenaService['matchmakingLobby']>;
-    assert.deepEqual(lobby.recent.map(({ match_id, opponent, reason, winner }) => ({ match_id, opponent, reason, winner })), history);
+    assert.deepEqual(lobby.recent.map(({ match_id, opponent, reason, winner }) => ({ match_id, opponent, reason, winner })), history.slice(0, 10));
     assert.equal(lobby.rating.rating, 1000);
-    assert.deepEqual(lobby.leaderboard, []);
+    assert.equal(restarted.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM arena_duels')?.count, 101);
   } finally { await restarted.app.close(); }
 });
 
-test('全服论剑榜只返回积分前 30 名，榜外玩家仍可查询自己的名次', async context => {
+test('全服论剑榜混合玩家与虚拟档案，限前 30 名并保留榜外个人名次', async context => {
   const { app, left } = await players(context);
-  app.db.run('INSERT INTO arena_ratings (cultivator_id, rating, losses) VALUES (?, 900, 1)', left.id);
+  const tied = Math.max(...practiceRoster.map(row => row.rating));
+  app.db.run('INSERT INTO arena_ratings (cultivator_id, rating, wins) VALUES (?, ?, 1)', left.id, tied);
+  app.db.run("INSERT INTO adventure_awards (cultivator_id, source_key, kind, amount, created_at) VALUES (?, 'board-test', 'expedition_first', 260, ?)", left.id, app.now());
+  app.db.run("INSERT INTO account_play_days (account_id, day) VALUES (?, '2026-10-30'), (?, '2026-10-31')", left.account_id, left.account_id);
+  const mixed = await left.send('combat.matchmaking_lobby');
+  assert.equal(mixed.leaderboard.length, 30);
+  assert.deepEqual(mixed.leaderboard[0], { rank: 1, alias: '松风', rating: tied, wins: 1, losses: 0, draws: 0, level: 3, play_days: 2 });
+  assert.equal(mixed.leaderboard[1].rating, tied);
+  assert.ok(practiceIds.has(mixed.leaderboard[1].alias));
+  assert.deepEqual(Object.keys(mixed.leaderboard[1]).sort(), Object.keys(mixed.leaderboard[0]).sort());
+  assert.equal(mixed.rating.rank, 1);
+  app.db.run('UPDATE arena_ratings SET rating = 900 WHERE cultivator_id = ?', left.id);
   for (let rank = 1; rank <= 31; rank++) {
     const id = `ranking-fixture-${rank}`;
     app.db.run("INSERT INTO cultivators (id, account_id, name, element, created_at) VALUES (?, ?, '临时角色', 'water', ?)", id, left.account_id, app.now());
@@ -306,5 +330,5 @@ test('全服论剑榜只返回积分前 30 名，榜外玩家仍可查询自己�
   const lobby = await left.send('combat.matchmaking_lobby');
   assert.equal(lobby.leaderboard.length, 30);
   assert.equal(lobby.leaderboard[29].alias, '玩家30');
-  assert.equal(lobby.rating.rank, 32);
+  assert.equal(lobby.rating.rank, 32 + practiceAhead(900));
 });

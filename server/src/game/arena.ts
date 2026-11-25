@@ -1,6 +1,8 @@
 import { type Clock, id, requireCondition } from '../core.js';
 import { Database } from '../database.js';
 import { ArenaMatch, arenaTickMs, type ArenaInput, type ArenaResult, type Seat } from './arena-match.js';
+import { practiceRoster } from './arena-practice-roster.js';
+import { adventureLevelForXp } from './character-progression.js';
 import type { Character } from './rules.js';
 import { SocialService } from './social.js';
 
@@ -9,6 +11,7 @@ const entrySeconds = 45;
 const roomLimit = 128;
 const queueSeconds = 15;
 const queueLimit = 512;
+const leaderboardLimit = 30;
 type Duel = {
   id: string; relation_id: string; challenger_id: string; opponent_id: string | null;
   challenger_alias: string; opponent_alias: string; challenger_avatar: string; opponent_avatar: string;
@@ -25,17 +28,10 @@ type Room = { row: Duel; match: ArenaMatch };
 export type ArenaSubscription = { id: string; seat: Seat };
 const counterpart = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const avatar = (actor: Pick<Character, 'profile'>) => JSON.parse(actor.profile).avatar === 'female' ? 'female' : 'male';
-const practiceRoster = [
-  { id: '青岫47', avatar: 'male', style: 0 },
-  { id: 'LingZhou08', avatar: 'female', style: 1 },
-  { id: '停云_17', avatar: 'female', style: 2 },
-  { id: '栖鹤313', avatar: 'male', style: 3 },
-  { id: '海棠夜雨', avatar: 'female', style: 0 },
-  { id: 'QiuBai26', avatar: 'male', style: 1 },
-  { id: '晚钟92', avatar: 'male', style: 2 },
-  { id: '归舟_406', avatar: 'female', style: 3 },
-] as const;
 const virtualNames = ['青石听雨', '一叶归舟', 'LinYe', '松间微风', '望川_', '云水行', 'WenYu_', '照夜', '木槿听风', '暮山行', '寻松', '鹤归', 'JianYu', '青衫渡', '石桥听雪', '长亭晚'];
+type LeaderboardEntry = { alias: string; rating: number; wins: number; losses: number; draws: number; level: number; play_days: number };
+const practiceLeaderboard: LeaderboardEntry[] = practiceRoster.map(({ id: alias, rating, wins, losses, draws, level, play_days }) =>
+  ({ alias, rating, wins, losses, draws, level, play_days }));
 function legacyOpponentId(matchId: string) {
   const seed = Number.parseInt(matchId.slice(-10), 16);
   const name = virtualNames[seed % virtualNames.length]!;
@@ -94,21 +90,36 @@ export class ArenaService {
     const profile = this.db.get<{ alias: string }>('SELECT alias FROM social_profiles WHERE cultivator_id = ?', actor.id) ?? null;
     const rating = this.rating(actor.id);
     const played = rating.wins + rating.losses + rating.draws;
-    const rank = played ? this.db.get<{ count: number }>(`SELECT COUNT(*) AS count FROM arena_ratings
-      WHERE wins + losses + draws > 0 AND (rating > ? OR (rating = ? AND cultivator_id < ?))`, rating.rating, rating.rating, actor.id)!.count + 1 : null;
+    const rank = played && profile ? this.db.get<{ count: number }>(`SELECT COUNT(*) AS count FROM arena_ratings r
+      JOIN social_profiles p ON p.cultivator_id = r.cultivator_id
+      WHERE r.wins + r.losses + r.draws > 0 AND (r.rating > ? OR (r.rating = ? AND r.cultivator_id < ?))`, rating.rating, rating.rating, actor.id)!.count
+      + practiceLeaderboard.filter(entry => entry.rating > rating.rating).length + 1 : null;
     const queue = this.db.get<{ joined_at: number; expires_at: number }>('SELECT joined_at, expires_at FROM arena_queue WHERE cultivator_id = ?', actor.id) ?? null;
     const active = this.db.get<Duel>(`SELECT * FROM arena_duels WHERE (mode = 'ranked' OR opponent_id IS NULL) AND status = 'active'
       AND (challenger_id = ? OR opponent_id = ?) LIMIT 1`, actor.id, actor.id);
-    const leaderboard = this.db.all<Rating & { alias: string }>(`SELECT r.*, p.alias FROM arena_ratings r
-      JOIN social_profiles p ON p.cultivator_id = r.cultivator_id WHERE wins + losses + draws > 0
-      ORDER BY rating DESC, r.cultivator_id LIMIT 30`).map(({ alias, rating, wins, losses, draws }, index) =>
-      ({ rank: index + 1, alias, rating, wins, losses, draws }));
+    const leaderboard = this.leaderboard();
     const recent = this.db.all<Duel>(`SELECT * FROM arena_duels WHERE (mode = 'ranked' OR opponent_id IS NULL) AND status = 'finished'
       AND (challenger_id = ? OR opponent_id = ?) ORDER BY created_at DESC, rowid DESC LIMIT 10`, actor.id, actor.id)
       .map(row => this.lobbyView(row, row.challenger_id === actor.id ? 0 : 1));
     return { profile, rating: { rating: rating.rating, wins: rating.wins, losses: rating.losses, draws: rating.draws, rank },
       queue, active: active ? { match_id: active.id, opponent: active.challenger_id === actor.id ? opponentAlias(active) : active.challenger_alias, mode: 'ranked' } : null,
       leaderboard, recent, server_now: this.now() };
+  }
+
+  private leaderboard() {
+    const players = this.db.all<Omit<LeaderboardEntry, 'level'> & { xp: number }>(`WITH leaders AS (
+      SELECT r.*, p.alias, c.account_id FROM arena_ratings r
+      JOIN social_profiles p ON p.cultivator_id = r.cultivator_id
+      JOIN cultivators c ON c.id = r.cultivator_id WHERE r.wins + r.losses + r.draws > 0
+      ORDER BY r.rating DESC, r.cultivator_id LIMIT ?
+    ) SELECT alias, rating, wins, losses, draws,
+      (SELECT COALESCE(SUM(amount), 0) FROM adventure_awards WHERE cultivator_id = leaders.cultivator_id) AS xp,
+      (SELECT COUNT(*) FROM account_play_days WHERE account_id = leaders.account_id) AS play_days
+      FROM leaders ORDER BY rating DESC, cultivator_id`, leaderboardLimit)
+      .map(({ xp, ...entry }) => ({ ...entry, level: adventureLevelForXp(xp) }));
+    // Stable sort preserves the human tie-break order and places humans first at equal scores.
+    return [...players, ...practiceLeaderboard].sort((left, right) => right.rating - left.rating)
+      .slice(0, leaderboardLimit).map((entry, index) => ({ rank: index + 1, ...entry }));
   }
 
   matchmakingJoin(actor: Character) {
@@ -382,7 +393,7 @@ export class ArenaService {
         const previous = this.db.get<{ opponent_alias: string }>(`SELECT opponent_alias FROM arena_duels
           WHERE challenger_id = ? AND opponent_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1`, player.cultivator_id);
         const lastProfile = practiceRoster.findIndex(profile => profile.id === previous?.opponent_alias);
-        const nextProfile = lastProfile < 0 ? Number.parseInt(matchId.slice(-2), 16) : lastProfile + 1;
+        const nextProfile = lastProfile < 0 ? Number.parseInt(matchId.slice(-8), 16) : lastProfile + 1;
         const firstChoice = practiceRoster[nextProfile % practiceRoster.length]!;
         const opponent = firstChoice.id === player.alias ? practiceRoster[(nextProfile + 1) % practiceRoster.length]! : firstChoice;
         this.db.run(`INSERT INTO arena_duels (id, relation_id, challenger_id, opponent_id,
