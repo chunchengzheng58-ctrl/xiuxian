@@ -354,6 +354,16 @@ func build_form(stack: VBoxContainer = null) -> void:
 	paragraph(right, "姓名用于辨认家人，修仙称号用于游戏角色。两者分别保存，修改称号不会重置成长。", 18)
 	paragraph(right, "每位老人都有独立的灵气钱包与行囊。创建、编辑档案不产生每日灵气奖励。", 18, GOLD_TEXT)
 
+## 校验失败原来只改按钮上方那行 16 号小字，桌面端几乎看不见，用户会以为按钮没反应。
+func show_form_error(message: String) -> void:
+	var line = str(message).strip_edges()
+	if line.is_empty():
+		line = "保存没有成功，请检查必填项后重试。"
+	status_label.text = "⚠  " + line
+	status_label.add_theme_color_override("font_color", Color("ff8a6b"))
+	status_label.add_theme_font_size_override("font_size", 26 if uses_touch_layout() else 20)
+	ui.toast(line)
+
 func save_form() -> void:
 	var payload = {"name": name_input.text, "age": age_input.text, "sex": sex_input.get_item_text(sex_input.selected) if sex_input.selected > 0 else "", "relation": relation_input.text, "title": title_input.text, "avatar": "female" if avatar_input.selected == 1 else "male", "mode": "self" if mode_input.selected == 1 else "family", "consent": consent_input.button_pressed}
 	var result: Dictionary
@@ -363,10 +373,11 @@ func save_form() -> void:
 	else:
 		result = game.family.add_member(payload) if editing_id.is_empty() else game.family.update_member(editing_id, payload)
 	if not result.ok:
-		status_label.text = result.message
+		show_form_error(result.message)
 		return
 	if editing_id.is_empty():
-		ui.activate_family(result.id, true)
+		if not ui.activate_family(result.id, true):
+			ui.toast("家人已保存，但切换角色没有完成，请回到家人列表重试。")
 	else:
 		game.sync_avatar_from_state()
 		ui.refresh()

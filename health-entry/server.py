@@ -14,6 +14,7 @@ import uuid
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, ".deps"))
 from flask import Flask, jsonify, request, send_from_directory
+from dotenv import dotenv_values
 from PIL import Image
 import recognizer
 import rules
@@ -25,6 +26,12 @@ app.config["MAX_CONTENT_LENGTH"] = 45 * 1024 * 1024
 BASELINE_DIR = os.path.join(BASE_DIR, "baselines")
 RECORDS = {}
 RECORD_LOCK = threading.Lock()
+
+
+def setting(name, default=""):
+    """进程环境优先，其次读同目录 .env；与 recognizer.load_config 的取值顺序保持一致。"""
+    local = dotenv_values(os.path.join(BASE_DIR, ".env"))
+    return (os.environ.get(name) or local.get(name) or default).strip()
 
 
 @app.get("/")
@@ -220,12 +227,12 @@ def game_baseline():
 
 def submit_to_game(payload, ticket):
     """把确认后的最小投影交给 C（服务凭证只在本服务端）。未配置 C 时保持原有本地行为。"""
-    base = os.environ.get("GAME_API_BASE", "").rstrip("/")
-    token = os.environ.get("HEALTH_SERVICE_TOKEN", "")
+    base = setting("GAME_API_BASE").rstrip("/")
+    token = setting("HEALTH_SERVICE_TOKEN")
     if not ticket:
         return None
     if not base or not token:
-        raise ValueError("游戏服务未配置，初始属性尚未生效。")
+        raise ValueError("游戏服务未配置（GAME_API_BASE / HEALTH_SERVICE_TOKEN），初始属性尚未写入游戏。")
     projection = for_game(payload)
     body = {"baseline_ticket": ticket, "baseline_id": payload["baseline_id"], "projection": {
         "projection_version": "legacy-pixel-v1", "mapping_version": str(projection.get("mapping_version", ""))[:40],
