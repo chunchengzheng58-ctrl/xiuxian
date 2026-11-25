@@ -88,6 +88,7 @@ func run() -> void:
 	if alpha:
 		if not await click(scene.ui.modal,"开始匹配"): await finish();return
 		if not check(await wait_for(func():return find_button(scene.ui.modal,"取消匹配")!=null),"Waiting queue shown"): await finish();return
+		check(await wait_for(func(): return scene.ui.modal.find_children("*", "Label", true, false).any(func(label): return label.text == "正在寻找对手 · 60 秒" or label.text == "正在寻找对手 · 59 秒"), 1000), "Queue starts at 60 seconds")
 		await capture("matchmaking-queue")
 		if not await click(scene.ui.modal,"取消匹配"): await finish();return
 		if not check(await wait_for(func():return find_button(scene.ui.modal,"开始匹配")!=null),"Cancellation restored the entry button"): await finish();return

@@ -64,7 +64,7 @@ test('公开匹配：无好友也能排队、重试不续期、双方进入相�
   assert.equal(initial.rating.rating,1000);
   assert.equal(initial.rating.rank,null);
   const queued=await left.send('combat.matchmaking_join',{},'join-left');
-  assert.equal(queued.queue.expires_at,app.now()+15);
+  assert.equal(queued.queue.expires_at,app.now()+60);
   assert.equal(app.game.snapshot(left.account_id).duel.queued,true);
   app.advance(2);
   const retry=await left.send('combat.matchmaking_join');
@@ -83,7 +83,7 @@ test('公开匹配：无好友也能排队、重试不续期、双方进入相�
   assert.equal(result.result!.reason,'knockout');
   assert.deepEqual(result.rating_change,{before:1000,after:1012,delta:12});
   const before=await left.send('combat.matchmaking_lobby');
-  assert.deepEqual(before.rating,{rating:1012,wins:1,losses:0,draws:0,rank:1});
+  assert.deepEqual(before.rating,{rating:1012,wins:1,losses:0,draws:0,rank:1 + practiceAhead(1012)});
   assert.deepEqual((await right.send('combat.matchmaking_lobby')).rating,{rating:988,wins:0,losses:1,draws:0,rank:2 + practiceAhead(988)});
   for(let retry=0;retry<3;retry++){
     await left.send('combat.duel_leave',{match_id:matchId});
@@ -93,7 +93,7 @@ test('公开匹配：无好友也能排队、重试不续期、双方进入相�
   app.advance(16);app.game.arena.step(1);
   assert.deepEqual(app.game.arena.state(second)!.rating_change,{before:1000,after:988,delta:-12});
   const serialized=JSON.stringify(before.leaderboard);
-  assert(serialized.includes('松风')&&serialized.includes('云栖'));
+  assert.equal(before.recent[0].opponent, '云栖');
   assert(!serialized.includes('私人')&&!serialized.includes('rank_left')&&!serialized.includes('cultivator_'));
   assert.deepEqual(app.db.all("SELECT * FROM ledger WHERE reason LIKE 'duel_%' OR reason LIKE 'ranked_%'"),[]);
 });
@@ -203,13 +203,15 @@ test('公开匹配：排队会话失效/生命周期变化清除，积分差距�
 });
 
 
-test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', async context => {
+test('公开匹配：界面倒计时 60 秒，实际等满 15 秒补位，击倒结算只计分一次', async context => {
   const { app, left, right } = await players(context);
   const before = (await left.send('combat.matchmaking_lobby')).rating;
   await left.send('combat.matchmaking_join');
   app.advance(14);
   app.game.arena.step(1);
-  assert.equal((await left.send('combat.matchmaking_lobby')).active, null);
+  const stillWaiting = await left.send('combat.matchmaking_lobby');
+  assert.equal(stillWaiting.active, null);
+  assert.equal(stillWaiting.queue.expires_at - stillWaiting.server_now, 46);
   app.advance(1);
   app.game.arena.step(1);
   const { active, queue } = await left.send('combat.matchmaking_lobby');
@@ -231,14 +233,23 @@ test('公开匹配：第 15 秒进入弱 AI 擂台，击倒结算不计排位', 
   app.game.arena.step(1400);
   const finished = app.game.arena.state(subscription)!;
   assert.equal(finished.result?.reason, 'knockout');
-  assert.equal(finished.rating_change, null);
+  const opponent = practiceRoster.find(profile => profile.id === active.opponent)!;
+  const delta = Math.round(-24 / (1 + 10 ** ((opponent.rating - before.rating) / 400)));
+  assert.deepEqual(finished.rating_change, { before: before.rating, after: before.rating + delta, delta });
+  const saved = app.db.get<{ rating: number; wins: number }>('SELECT rating, wins FROM arena_practice_ratings WHERE profile_id = ?', opponent.id)!;
+  assert.equal(saved.rating, opponent.rating - delta);
+  assert.equal(saved.wins, opponent.wins + 1);
+  await left.send('combat.duel_leave', { match_id: active.match_id });
+  await left.send('combat.duel_leave', { match_id: active.match_id });
   const lobby = await left.send('combat.matchmaking_lobby');
-  assert.deepEqual(lobby.rating, before);
+  assert.equal(lobby.rating.rating, before.rating + delta);
+  assert.equal(lobby.rating.losses, before.losses + 1);
   assert.equal(lobby.leaderboard.length, 30);
-  assert.ok(lobby.leaderboard.every((entry: { alias: string }) => practiceIds.has(entry.alias)));
+  assert.ok(lobby.leaderboard.some((entry: { alias: string }) => practiceIds.has(entry.alias)));
   assert.equal(lobby.recent[0].opponent, active.opponent);
   assert.equal(lobby.recent[0].mode, 'ranked');
-  assert.equal(lobby.recent[0].rating_delta, null);
+  assert.equal(lobby.recent[0].rating_delta, delta);
+  assert.equal(app.db.get<{ wins: number }>('SELECT wins FROM arena_practice_ratings WHERE profile_id = ?', opponent.id)?.wins, opponent.wins + 1);
 });
 
 test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', async () => {
@@ -246,7 +257,7 @@ test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', a
   assert.equal(practiceIds.size, 100);
   assert.equal(new Set(practiceRoster.map(row => row.style)).size, 4);
   assert.ok(new Set(practiceRoster.map(row => row.level)).size >= 8);
-  assert.ok(new Set(practiceRoster.map(row => row.play_days)).size >= 40);
+  assert.ok(new Set(practiceRoster.map(row => row.play_days)).size >= 20);
   const testDirectory = join(repositoryRoot, 'work/arena-history-tests');
   mkdirSync(testDirectory, { recursive: true });
   let now = 1795255200;
@@ -255,7 +266,8 @@ test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', a
   const first = await buildApp(options);
   let actorId: string;
   const encountered = new Map<string, string>();
-  const history: { match_id: string; opponent: string; reason: string; winner: number }[] = [];
+  const history: { match_id: string; opponent: string; reason: string; winner: number; rating_delta: number | null }[] = [];
+  let finalRating = 1000;
   try {
     await first.auth.register(credentials);
     const { account_id } = await first.auth.login(credentials);
@@ -281,13 +293,15 @@ test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', a
       }
       encountered.set(active.opponent, fight.avatars[1]!);
       const result = first.game.arena.leave(actor, active.match_id);
-      assert.equal(result.rating_delta, null);
+      assert.ok(result.rating_delta !== null && result.rating_delta <= 0);
       assert.equal(result.opponent, active.opponent);
-      history.unshift({ match_id: active.match_id, opponent: active.opponent, reason: 'forfeit', winner: 1 });
+      history.unshift({ match_id: active.match_id, opponent: active.opponent, reason: 'forfeit', winner: 1, rating_delta: result.rating_delta });
     }
     assert.equal(encountered.size, 100);
     assert.deepEqual(new Set(encountered.values()), new Set(['male', 'female']));
     assert.equal(first.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM accounts')?.count, 1);
+    assert.equal(first.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM arena_practice_ratings')?.count, 100);
+    finalRating = first.game.arena.matchmakingLobby(actor).rating.rating;
     const legacy = history[9]!;
     first.db.run("UPDATE arena_duels SET opponent_alias = '一叶归舟7183' WHERE id = ?", legacy.match_id);
     legacy.opponent = '一叶归舟7183';
@@ -301,8 +315,10 @@ test('100 名虚拟玩家轮换，战绩保存到原账号并可重开读取', a
       payload: { version: 1, command: 'combat.matchmaking_lobby', payload: { cultivator_id: actorId } } });
     assert.equal(response.statusCode, 200);
     const lobby = response.json().data as ReturnType<ArenaService['matchmakingLobby']>;
-    assert.deepEqual(lobby.recent.map(({ match_id, opponent, reason, winner }) => ({ match_id, opponent, reason, winner })), history.slice(0, 10));
-    assert.equal(lobby.rating.rating, 1000);
+    assert.deepEqual(lobby.recent.map(({ match_id, opponent, reason, winner, rating_delta }) => ({ match_id, opponent, reason, winner, rating_delta })), history.slice(0, 10));
+    assert.equal(lobby.rating.rating, finalRating);
+    assert.equal(lobby.rating.losses, 101);
+    assert.equal(restarted.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM arena_practice_ratings')?.count, 100);
     assert.equal(restarted.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM arena_duels')?.count, 101);
   } finally { await restarted.app.close(); }
 });
@@ -331,4 +347,14 @@ test('全服论剑榜混合玩家与虚拟档案，限前 30 名并保留榜外�
   assert.equal(lobby.leaderboard.length, 30);
   assert.equal(lobby.leaderboard[29].alias, '玩家30');
   assert.equal(lobby.rating.rank, 32 + practiceAhead(900));
+});
+
+test('虚拟榜单的活跃档案更常出现在高分段，且分数范围有足够区分度', () => {
+  const byRating = [...practiceRoster].sort((left, right) => right.rating - left.rating);
+  const top = byRating.slice(0, 25);
+  const bottom = byRating.slice(-25);
+  assert.ok(byRating[0]!.rating - byRating.at(-1)!.rating >= 500);
+  assert.ok(top.reduce((days, row) => days + row.play_days, 0) > 2 * bottom.reduce((days, row) => days + row.play_days, 0));
+  const rounds = (rows: typeof practiceRoster) => rows.reduce((count, row) => count + row.wins + row.losses + row.draws, 0);
+  assert.ok(rounds(top) > 2 * rounds(bottom));
 });

@@ -5,8 +5,8 @@ import { ArenaMatch, type Seat } from '../src/game/arena-match.js';
 import { fixture } from './helpers.js';
 
 function step(match: ArenaMatch, ticks: number) { for (let i = 0; i < ticks; i++) match.step(); }
-function ready() {
-  const match = new ArenaMatch(1125);
+function ready(practiceStyle?: number) {
+  const match = practiceStyle === undefined ? new ArenaMatch(1125) : new ArenaMatch(1125, { practiceStyle });
   match.connect(0, true);
   match.connect(1, true);
   step(match, 50);
@@ -75,6 +75,38 @@ test('擂台模拟：双方断线冻结战斗、重连恢复、超时结束与 9
   const empty = new ArenaMatch(2);
   step(empty, 2);
   assert.equal(empty.result?.reason, 'absent');
+});
+
+test('虚拟玩家使用共同的资源和冷却规则释放剑气、闪避、护盾与治疗', () => {
+  const sword = ready(0);
+  sword.fighters[1].x = 790;
+  step(sword, 33);
+  assert.ok(sword.fighters[1].cd[2]! > 0);
+  assert.ok(sword.fighters[1].mp < 100);
+
+  const dodge = ready(0);
+  step(dodge, 19);
+  const [player, bot] = dodge.fighters;
+  dodge.blades.push({ owner: 0, x: bot.x - 90, y: bot.y, fx: 1, fy: 0, life: 10 });
+  dodge.step();
+  assert.ok(bot.dash > 0);
+  assert.ok(bot.stamina < 100);
+  assert.ok(bot.y !== player.y);
+
+  const guard = ready(0);
+  guard.fighters[1].x = 609;
+  step(guard, 16);
+  action(guard, 0, 2, 1, 1);
+  step(guard, 4);
+  assert.ok(guard.fighters[1].shield > 0);
+  assert.ok(guard.fighters[1].mp < 100);
+
+  const heal = ready(0);
+  heal.fighters[1].hp = 24;
+  step(heal, 33);
+  assert.ok(heal.fighters[1].heal > 0);
+  step(heal, 21);
+  assert.equal(heal.fighters[1].hp, 48);
 });
 
 async function players(context: TestContext) {

@@ -48,7 +48,9 @@ try{
  }
  assert.equal(lobbies[0].recent[0].rating_delta,12);
  assert.equal(lobbies[1].recent[0].rating_delta,-12);
- assert.equal(lobbies[0].leaderboard[0].alias,'松风');
+ assert.equal(lobbies[1].recent[0].opponent,'松风');
+ const winningRank = lobbies[0].rating.rank;
+ if (winningRank <= 30) assert.equal(lobbies[0].leaderboard[winningRank - 1].alias,'松风');
  assert.equal(server.db.get('SELECT COUNT(*) AS count FROM social_relations').count,0,'Public PvP needs no friend relationship');
  assert.equal(server.db.get('SELECT COUNT(*) AS count FROM arena_duels').count,1,'Cancel and retry create only one actual match');
  console.log('MATCHMAKING_UI_SERVER: two fresh players, public aliases, cancel/rejoin, automatic entry, reconnect, authoritative knockout, exact one-time ratings and leaderboard without adding friends');

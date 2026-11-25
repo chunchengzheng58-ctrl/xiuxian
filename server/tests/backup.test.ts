@@ -318,7 +318,7 @@ test('公开排位恢复：真实KO积分与战绩保留，运行中排位恢复
   assert.equal(result.result!.reason, 'knockout');
   assert.equal(result.result!.winner, completed.first.seat);
   assert.deepEqual(result.rating_change, { before: 1000, after: 1012, delta: 12 });
-  const leaderboard = (await left.send('combat.matchmaking_lobby')).leaderboard;
+  const lobby = await left.send('combat.matchmaking_lobby');
   const ratings = app.db.all('SELECT * FROM arena_ratings ORDER BY cultivator_id');
   const persistedWin = app.db.get('SELECT * FROM arena_duels WHERE id=?', completed.matchId);
   app.advance(1);
@@ -332,8 +332,8 @@ test('公开排位恢复：真实KO积分与战绩保留，运行中排位恢复
   assert.deepEqual(restored.db.all('SELECT * FROM arena_ratings ORDER BY cultivator_id'), ratings);
   assert.deepEqual(restored.db.get('SELECT * FROM arena_duels WHERE id=?', completed.matchId), persistedWin);
   const restoredLobby = restored.game.arena.matchmakingLobby(restored.game.own(left.account_id, left.id));
-  assert.deepEqual(restoredLobby.leaderboard, leaderboard);
-  assert.deepEqual(restoredLobby.rating, { rating: 1012, wins: 1, losses: 0, draws: 0, rank: 1 });
+  assert.deepEqual(restoredLobby.leaderboard, lobby.leaderboard);
+  assert.deepEqual(restoredLobby.rating, lobby.rating);
   const interrupted = restored.game.arena.state({ id: active.matchId, seat: active.first.seat })!;
   assert.equal(interrupted.result!.reason, 'interrupted');
   assert.equal(interrupted.rating_change, null);
