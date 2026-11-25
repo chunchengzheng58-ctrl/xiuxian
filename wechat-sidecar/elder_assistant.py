@@ -26,7 +26,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -338,21 +338,19 @@ def _ensure_confirm_hint(reply: str, intent: str) -> str:
     return f"{text} {hint}".strip() if text else hint
 
 
-# 老人端人设：先像家人朋友一样正常聊天，别每句都追问身体。
+# 老人端人设：这是有任务的陪伴，不是闲聊机器人。三件事：吃药、不舒服、今天说好的事。
 _ELDER_PERSONA = (
-    "你是陪老人聊天的小助手，先像家人朋友一样正常聊天，用短句，亲切自然。"
-    "老人问什么，就直接、清楚地回答什么；手里有照片/体检/药盒识别出的信息，就照着事实说，不要说自己“看不清/看个大概/不一定准”。"
-    "不要主动说药是干什么用的，等老人问“干什么用/治什么”再说。"
-    "按治疗计划提醒吃药是可以的：只说该吃哪个药、一天几次、什么时候吃，不说用途、不改剂量。"
-    "结尾不要加“对就说对/不对就说不对/是否确认”这类话。"
-    "别每句都加“听医生的/遵医嘱/别自己加量减量”这类套话；只有情况危险时才提醒打 120 或联系家人。"
-    "记忆里记着的“最近不舒服/在吃的药”是之前聊过的，除非老人这次又主动提起来，否则别每回都翻出来追问。"
-    "老人只是打招呼、闲聊、问你是谁，就轻松回应，别急着问身体。"
-    "被问“你是谁/是什么模型”时，就说“我就是陪你说话的小助手”，说完顺着对方刚才的话题聊，别转去问身体。"
-    "别用“记录、确认、候选、事件、摘要、整理”这类后台词，别像填表。"
-    "可以偶尔用“呀、啦、呢、嘞”显得亲近，但别太腻。"
-    "不下诊断、不改药/停药/加药、不凭药盒猜剂量。"
-    "不聊游戏、修仙、属性、任务。"
+    "你是每天陪老人吃药的助手，不是闲聊机器人。你心里始终盯着三件事："
+    "① 今天的药吃了没有；② 老人有没有哪里不舒服；③ 今天说好要做的事做了没有。"
+    "每轮回复只推进其中一件，最多问一个问题，给老人一个好接的话头。"
+    "老人打招呼、闲聊、问你是谁，先自然接一句，再顺着回到今天还没落定的那件事；不要每轮换着问，也不要一次问三样。"
+    "用短句、口语、像家里人说话。手里有照片/体检/药盒识别出的信息，就照着事实说，不要说自己“看不清/看个大概/不一定准”。"
+    "药是干什么用的，等老人问了再说；按计划提醒吃药时只说药名、一天几次、什么时候吃，不改剂量、不说停药。"
+    "老人说不舒服时先接住这句，别急着回到用药。"
+    "别用“事件、摘要、候选、后台、数据、整理”这类词；不要写“是否确认/对不对/请确认”。"
+    "被问“你是谁/是什么模型”时，就说“我是每天提醒你吃药的小助手”，然后接着刚才的话头说。"
+    "出现胸痛、说不清话、摔倒、喘不上气，先让马上叫人、打 120，别管任务。"
+    "不聊游戏、修仙、属性、关卡。"
 )
 
 # 没有模型时的确定性兜底，随机换着说，避免每次都一句机械话。
@@ -416,7 +414,6 @@ def _prompt_for_gateway(
         for p in policies
     ]
     return (
-        _ELDER_PERSONA + "\n"
         "给建议时优先给一个马上能做的小动作，同时医生交代过的限制（比如限盐/限水）优先。\n"
         f"用户原话：{text}\n已确认事实：{_json(facts)}\n参考规则：{_json(citations)}\n"
         "直接说给老人听的话就行，别输出别的。"
@@ -432,7 +429,7 @@ def _call_openclaw(text: str, facts: Dict[str, Any], policies: List[Dict[str, An
         "model": os.environ.get("OPENCLAW_MODEL", "openclaw/elder-health"),
         "user": f"elder:{elder_id}",
         "messages": [
-            {"role": "system", "content": _ELDER_PERSONA},
+            {"role": "system", "content": _system_prompt(elder_id)},
             {"role": "user", "content": _prompt_for_gateway(text, facts, policies)},
         ],
         "temperature": 0.2,
@@ -502,9 +499,9 @@ def _call_route(route: str, text: str, facts: Dict[str, Any], policies: List[Dic
     if os.environ.get("HEALTH_CHAT_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:
         return None
     base, key, model, temp = _chat_config(route)
-    system = _ELDER_PERSONA
+    system = _system_prompt(elder_id)
     if route == "medical":
-        system = _ELDER_PERSONA + "这段是医疗内容：回答要准确、说人话，别加“听医生的/遵医嘱”这类套话；不诊断、不替代医生。"
+        system = system + "\n这段是医疗内容：回答要准确、说人话，别加“听医生的/遵医嘱”这类套话；不诊断、不替代医生。"
     history_text = ""
     turns = _recent_turns(elder_id, limit=6)
     if turns:
@@ -803,6 +800,22 @@ def _cn_to_int(s: str) -> Optional[int]:
     return None
 
 
+_DRUG_SUFFIX_RE = re.compile(r"(片|胶囊|颗粒|丸|口服液|糖浆|注射液|软膏|滴剂|喷雾|栓|贴)$")
+_DRUG_TAIL_RE = re.compile(r"(平|星|素|林|唑|啶|芬|酮|醇|酸|胺|昔布|沙坦|洛尔|地平|西林|霉素|沙星)$")
+
+
+def _looks_like_drug_name(text: str) -> bool:
+    """老人只回一个药名时（如“苯磺酸氨氯地平”），也要认得出这是药。"""
+    value = re.sub(r"[。！!，,、\s]", "", str(text or ""))
+    if not 2 <= len(value) <= 20:
+        return False
+    if re.search(r"吃|喝|服|买|开|停|多少|几|没有|不知道|忘了", value):
+        return False
+    if _DRUG_SUFFIX_RE.search(value):
+        return True
+    return len(value) >= 3 and bool(_DRUG_TAIL_RE.search(value))
+
+
 def _extract_drug_name(text: str) -> str:
     value = str(text or "").strip()
     for pat in (
@@ -815,6 +828,9 @@ def _extract_drug_name(text: str) -> str:
             name = m.group(1).strip()
             if name and not re.search(r"^(药|这个|那个|些)$", name):
                 return name
+    # 老人直接甩一个药名（“苯磺酸氨氯地平”）时没有动词可抓，就用原文。
+    if _looks_like_drug_name(value):
+        return re.sub(r"[。！!，,、\s]", "", value)[:20]
     return "这个药"
 
 
@@ -1002,15 +1018,163 @@ def _active_courses(elder_id: str) -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _local_today_utc_bounds() -> Tuple[str, str]:
+    """本地“今天”对应的 UTC 时间区间。事件表按 UTC 存，不能直接比字符串日期。"""
+    start = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return (
+        start.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
+        end.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
+    )
+
+
 def _medication_logged_today(elder_id: str) -> bool:
-    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    start, end = _local_today_utc_bounds()
     with _db() as conn:
         row = conn.execute(
             "SELECT 1 FROM health_events WHERE elder_id = ? AND event_type = 'medication_taken' "
-            "AND substr(created_at, 1, 10) = ? LIMIT 1",
-            (elder_id, today),
+            "AND created_at >= ? AND created_at < ? LIMIT 1",
+            (elder_id, start, end),
         ).fetchone()
     return row is not None
+
+
+def _slot_of(now: datetime) -> str:
+    hour = now.hour
+    if hour < 11:
+        return "早上"
+    if hour < 14:
+        return "中午"
+    if hour < 18:
+        return "下午"
+    return "晚上"
+
+
+def _today_events(elder_id: str, limit: int = 6) -> List[Dict[str, Any]]:
+    start, end = _local_today_utc_bounds()
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT event_type, payload_json, created_at FROM health_events WHERE elder_id = ? "
+            "AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT ?",
+            (elder_id, start, end, max(1, min(limit, 30))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _asked_medication_today(elder_id: str) -> bool:
+    """今天是否已经在回复里问过用药。问过就别同一句话再问一遍。"""
+    start, end = _local_today_utc_bounds()
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM chat_history WHERE elder_id = ? AND role = 'assistant' "
+            "AND created_at >= ? AND created_at < ? AND (text LIKE '%吃了%' OR text LIKE '%服药%' OR text LIKE '%该吃%') LIMIT 1",
+            (elder_id, start, end),
+        ).fetchone()
+    return row is not None
+
+
+_MED_ACK_RE = re.compile(r"^(已经|刚|今天)?(吃|服)(了|过|上|完)(了|啦|呀|啊|呢|咯)?$")
+
+
+def _medication_ack(text: str) -> bool:
+    """老人只说“吃了/吃过了”时，判断是不是在回答用药。"""
+    value = re.sub(r"[。！!，,、\s~～]", "", str(text or ""))
+    if not value or len(value) > 8:
+        return False
+    if value in {"吃了", "吃过了", "吃上了", "吃啦", "已经吃了", "刚吃了", "服了", "吃完了", "吃完啦"}:
+        return True
+    return bool(_MED_ACK_RE.match(value))
+
+
+def _awaiting_medication_answer(elder_id: str) -> bool:
+    """上一轮助手是在问今天的药吃没吃，且今天还没记上。"""
+    courses = _active_courses(elder_id)
+    if not courses or _medication_logged_today(elder_id):
+        return False
+    turns = _recent_turns(elder_id, limit=2)
+    if not turns:
+        return False
+    role, last = turns[-1]
+    if role != "assistant":
+        return False
+    # 助手可能直接说药名（苯磺酸氨氯地平），一个“药”字都不带。
+    names = [str(c.get("drug_name") or "") for c in courses]
+    mentions_drug = bool(re.search(r"药|胶囊|药片|片剂", last)) or any(
+        name and (name in last or (len(name) >= 4 and name[-4:] in last)) for name in names
+    )
+    return mentions_drug and bool(re.search(r"吃|服", last))
+
+
+def _awaiting_drug_name_answer(elder_id: str) -> bool:
+    """上一轮助手在问“你在吃什么药”，且还没有登记任何疗程。"""
+    if _active_courses(elder_id):
+        return False
+    turns = _recent_turns(elder_id, limit=2)
+    if not turns or turns[-1][0] != "assistant":
+        return False
+    return bool(re.search(r"吃什么药|在吃.{0,6}药|药名|哪些药|什么药", turns[-1][1]))
+
+
+def _task_block(elder_id: str) -> str:
+    """把「今天的任务」写成模型能直接用的服务端事实，让每轮回复都有落点。
+
+    这段只描述事实和本轮该推进的一件事，不替模型写台词。
+    """
+    now = datetime.now().astimezone()
+    slot = _slot_of(now)
+    courses = _active_courses(elder_id)
+    logged = _medication_logged_today(elder_id)
+    lines = [f"现在是 {now.strftime('%m月%d日 %H:%M')}（{slot}）。"]
+
+    if courses:
+        plans = []
+        for course in courses[:2]:
+            drug = str(course.get("drug_name") or "在吃的药")
+            freq = str(course.get("times_per_day") or "").strip()
+            when = str(course.get("when_take") or "").strip()
+            item = drug + (f"，{freq}" if freq else "") + (f"，{when}" if when else "")
+            left = ""
+            try:
+                days = (datetime.strptime(str(course.get("end_date")), "%Y-%m-%d").date() - now.date()).days + 1
+                if 0 < days <= 90:
+                    left = f"（还剩{days}天）"
+            except (TypeError, ValueError):
+                left = ""
+            plans.append(item + left)
+        lines.append("今天的用药：" + "；".join(plans))
+        lines.append("今天服药：" + ("已经记上了" if logged else "还没记上"))
+    else:
+        lines.append("今天的用药：没有登记在吃的药")
+
+    others = [
+        row for row in _today_events(elder_id)
+        if row.get("event_type") not in ("medication_taken", None)
+    ]
+    if others:
+        nodes = {"symptom_reported": "说过不舒服", "meal_log": "说过吃了什么", "measurement": "报过测量结果", "photo_observation": "发过资料照片"}
+        lines.append("今天已经聊过：" + "、".join(nodes.get(row.get("event_type"), str(row.get("event_type"))) for row in others[:3]))
+    else:
+        lines.append("今天还什么都没记。")
+
+    if courses and not logged:
+        if _asked_medication_today(elder_id):
+            focus = "今天已经问过用药了，别再重复同一句话；换成更具体的一句，比如问是吃了还是没吃、要不要现在补上。"
+        else:
+            focus = f"这一轮落到「今天的药还没确认」上：用{slot}的语气问一句吃了没有，问完就停，别连着追问身体。"
+    elif courses and logged:
+        focus = "今天的药已经确认过了，这轮不要再提药；可以问问身体感觉或今天剩下的安排。"
+    else:
+        focus = (
+            "今天没有登记在吃的药。这一轮的目的只有一个：问清他现在每天在吃什么药（说个药名就行），"
+            "好以后到点提醒他；问一句就停，别问剂量、别问吃几天。"
+        )
+    lines.append("本轮重点：" + focus)
+    lines.append("这些是服务端的事实，不要编造别的用药或检查结果。")
+    return "【今天的任务】\n" + "\n".join(lines)
+
+
+def _system_prompt(elder_id: str) -> str:
+    return _ELDER_PERSONA + "\n\n" + _task_block(elder_id)
 
 
 def _daily_plan_reply(elder_id: str) -> str:
@@ -1058,7 +1222,11 @@ def _proactive_med_line(elder_id: str, reply: str, intent: str) -> str:
     if not courses or _medication_logged_today(elder_id):
         return reply
     drug = str(courses[0].get("drug_name") or "")
-    if drug and drug in reply:
+    tail = drug[-4:] if len(drug) >= 4 else drug
+    if drug and (drug in reply or (tail and tail in reply)):
+        return reply
+    # 系统提示已经要求这一轮落到用药上，模型自己也提了就别再补一遍。
+    if re.search(r"吃药|服药|该吃|药吃|把药|记得吃|吃了没|吃了没有|吃过药", reply):
         return reply
     now = time.time()
     if now - _PRACTICE_LOG.get(elder_id, 0.0) < _GUIDANCE_COOLDOWN:
@@ -1275,6 +1443,14 @@ def handle_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     intent = _intent(text, attachments)
+    answering_medication = False
+    # 上一轮正在问“今天的药吃了没有”，老人回“吃了”是在回答用药，不是报了一顿饭。
+    if intent == "meal_log" and _medication_ack(text) and _awaiting_medication_answer(elder_id):
+        intent = "medication_taken"
+        answering_medication = True
+    # 上一轮在问“你现在吃什么药”，老人回一个药名就该开疗程，而不是当闲聊。
+    if not attachments and intent == "chat" and _awaiting_drug_name_answer(elder_id) and _looks_like_drug_name(text):
+        intent = "medication_course"
     # 问“今天做什么/该锻炼什么”：直接答当天计划，别让模型现编，也别只回一句闲聊。
     if intent == "daily_plan":
         reply = _daily_plan_reply(elder_id)
@@ -1332,10 +1508,17 @@ def handle_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
     elif candidate:
         pending_event_id = _save_pending(elder_id, session_id, candidate, risk_level, family_share)
+        reply = ""
+        # 老人是在回答我们刚问的那句“药吃了没有”，直接落账，别再让他回一个「是」。
+        if answering_medication and pending_event_id:
+            confirmed = confirm_pending(pending_event_id, "confirm")
+            if confirmed.get("ok"):
+                pending_event_id = None
+                reply = "记上了，今天的药就算完成了。今天身上有哪儿不舒服没有？"
         # 照片识别：直接、自然地把药名念出来，不追确认、不说用途（用途等老人问再说）。
-        if intent == "photo_review" and recognition_status == "recognized":
+        if not reply and intent == "photo_review" and recognition_status == "recognized":
             reply = _photo_reply(facts) or "我先把照片里看到的跟你说。"
-        else:
+        elif not reply:
             # 其它确认项让模型自己生成回复（带记忆），失败才退回安全的固定话术。
             reply = _call_openclaw(text, facts, policies, elder_id) or _call_route(
                 _route_for(intent), text, facts, policies, elder_id, memory_text
