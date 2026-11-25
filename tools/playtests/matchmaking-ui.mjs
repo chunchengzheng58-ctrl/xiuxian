@@ -41,7 +41,8 @@ try{
   assert.equal(lobby.recent.length,1);
   assert.equal(lobby.recent[0].mode,'ranked');
   assert.equal(lobby.recent[0].reason,'knockout');
-  assert.equal(lobby.leaderboard.length,2);
+  assert.equal(lobby.leaderboard.length,30);
+  assert.ok(lobby.leaderboard.some(entry=>entry.alias!=='松风'&&entry.alias!=='云栖'&&entry.play_days>0));
   assert.equal(lobby.queue,null);
   assert.equal(lobby.active,null);
  }

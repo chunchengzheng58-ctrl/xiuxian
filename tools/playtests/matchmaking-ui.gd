@@ -130,5 +130,6 @@ func run() -> void:
 	if alpha: await capture("matchmaking-result")
 	if not await click(view,"返回论剑台"): await finish();return
 	check(await wait_for(func():return scene.ui.modal.find_children("*","Label",true,false).any(func(label):return "积分 +" in label.text if alpha else "积分 -" in label.text)),"Match history shows the exact rating change")
+	check(scene.ui.modal.find_children("*", "Label", true, false).any(func(label): return label.text.begins_with("Lv.") and "游玩" in label.text), "Leaderboard shows levels and play days")
 	if alpha: await capture("matchmaking-leaderboard")
 	await finish()
