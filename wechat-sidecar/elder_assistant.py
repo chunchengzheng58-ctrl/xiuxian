@@ -296,6 +296,8 @@ def _intent(text: str, attachments: List[Dict[str, Any]]) -> str:
         return "measurement"
     if re.search(r"晕|眩|发飘|走不稳|站不稳|没力气|乏力|恶心|咳嗽|疼|痛|不舒服|难受|发热|睡不着", value):
         return "symptom"
+    if re.search(r"今天.{0,4}(做什么|干什么|干啥|干嘛|怎么安排|安排什么|注意什么)|该做什么|干点什么|锻炼|运动|散步|活动量|康复训练", value):
+        return "daily_plan"
     if re.search(r"火锅|烧烤|饮酒|吃什么|吃饭|晚饭|午饭|早餐|菜|水果|甜|咸", value):
         return "lifestyle"
     return "chat"
@@ -341,6 +343,7 @@ _ELDER_PERSONA = (
     "你是陪老人聊天的小助手，先像家人朋友一样正常聊天，用短句，亲切自然。"
     "老人问什么，就直接、清楚地回答什么；手里有照片/体检/药盒识别出的信息，就照着事实说，不要说自己“看不清/看个大概/不一定准”。"
     "不要主动说药是干什么用的，等老人问“干什么用/治什么”再说。"
+    "按治疗计划提醒吃药是可以的：只说该吃哪个药、一天几次、什么时候吃，不说用途、不改剂量。"
     "结尾不要加“对就说对/不对就说不对/是否确认”这类话。"
     "别每句都加“听医生的/遵医嘱/别自己加量减量”这类套话；只有情况危险时才提醒打 120 或联系家人。"
     "记忆里记着的“最近不舒服/在吃的药”是之前聊过的，除非老人这次又主动提起来，否则别每回都翻出来追问。"
@@ -987,6 +990,86 @@ def active_care_tip(elder_id: str) -> str:
     return ""
 
 
+def _active_courses(elder_id: str) -> List[Dict[str, Any]]:
+    """仍在疗程内、每天该提醒的用药。问日程和主动引导都只认这一份来源。"""
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM medication_courses WHERE elder_id = ? AND status = 'active' AND end_date >= ? "
+            "ORDER BY created_at",
+            (elder_id, today),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _medication_logged_today(elder_id: str) -> bool:
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM health_events WHERE elder_id = ? AND event_type = 'medication_taken' "
+            "AND substr(created_at, 1, 10) = ? LIMIT 1",
+            (elder_id, today),
+        ).fetchone()
+    return row is not None
+
+
+def _daily_plan_reply(elder_id: str) -> str:
+    """老人问“今天做什么/该锻炼什么”：先答用药计划，再给一条能马上做的活动，最后才谈别的。"""
+    courses = _active_courses(elder_id)
+    if courses:
+        course = courses[0]
+        drug = course.get("drug_name") or "在吃的药"
+        freq = course.get("times_per_day") or "按医生说的次数"
+        when = course.get("when_take") or ""
+        left = ""
+        try:
+            days = (datetime.strptime(str(course.get("end_date")), "%Y-%m-%d").date() - datetime.now().astimezone().date()).days + 1
+            if 0 < days <= 90:
+                left = f"，还剩{days}天"
+        except (TypeError, ValueError):
+            left = ""
+        detail = f"{freq}" + (f"，{when}" if when else "") + left
+        if _medication_logged_today(elder_id):
+            head = f"今天「{drug}」已经记上一次了，后面几次照旧：{detail}。"
+        else:
+            head = f"今天先把药吃了：{drug}，{detail}。吃完跟我说一声，我给你记上。"
+    else:
+        head = "今天没有登记在吃的药，那就先把日子过舒服点。"
+    body = (
+        "活动不用复杂：饭后歇半小时，出去慢慢走20分钟，走到还能说话、不喘就行；"
+        "头晕、腿软、胸口闷就马上停下来歇着，别硬撑。"
+    )
+    tail = "药怎么吃按医生交代的来，我不给你改量。" if courses else ""
+    return head + body + tail
+
+
+_PRACTICE_LOG: Dict[str, float] = {}
+_GUIDANCE_COOLDOWN = 30 * 60
+
+
+def _proactive_med_line(elder_id: str, reply: str, intent: str) -> str:
+    """有在吃的药、今天还没记上时，隔一阵补一句用药提醒。
+
+    问药、刚确认过、问日程的轮次不重复念；同一老人 30 分钟内最多补一次，避免每句都催。
+    """
+    if intent in {"medication_taken", "medication_course", "medication_stop", "reminder_help", "daily_plan"}:
+        return reply
+    courses = _active_courses(elder_id)
+    if not courses or _medication_logged_today(elder_id):
+        return reply
+    drug = str(courses[0].get("drug_name") or "")
+    if drug and drug in reply:
+        return reply
+    now = time.time()
+    if now - _PRACTICE_LOG.get(elder_id, 0.0) < _GUIDANCE_COOLDOWN:
+        return reply
+    if len(_PRACTICE_LOG) > 500:
+        _PRACTICE_LOG.clear()
+    _PRACTICE_LOG[elder_id] = now
+    tail = f"对了，今天「{drug}」还没记上，按医生说的吃完跟我说一声。" if drug else "对了，今天吃完药跟我说一声。"
+    return reply + tail
+
+
 def _recent_context(elder_id: str, limit: int = 12) -> List[Dict[str, Any]]:
     """只取已确认事件的结构化摘要，给生活建议做保守个性化；不读原始图片。"""
     with _db() as conn:
@@ -1192,6 +1275,20 @@ def handle_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     intent = _intent(text, attachments)
+    # 问“今天做什么/该锻炼什么”：直接答当天计划，别让模型现编，也别只回一句闲聊。
+    if intent == "daily_plan":
+        reply = _daily_plan_reply(elder_id)
+        _save_turn(elder_id, "user", text)
+        _save_turn(elder_id, "assistant", reply)
+        return {
+            "session_id": session_id,
+            "mode": "elder_only",
+            "intent": "daily_plan",
+            "reply": reply,
+            "risk_level": "routine",
+            "needs_confirmation": False,
+            "quick_replies": _quick_replies("medication_taken"),
+        }
     facts: Dict[str, Any] = _extract_measurements(text)
     recognition_status = "not_requested"
     recognition_error: Optional[str] = None
@@ -1262,6 +1359,8 @@ def handle_message(payload: Dict[str, Any]) -> Dict[str, Any]:
             or _call_route(_route_for(intent), text, facts, policies, elder_id, memory_text)
             or _default_lifestyle_reply(text, policies, known_context)
         )
+
+    reply = _proactive_med_line(elder_id, reply, intent)
 
     _save_turn(elder_id, "user", text)
     _save_turn(elder_id, "assistant", reply)
