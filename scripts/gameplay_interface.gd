@@ -75,6 +75,9 @@ func _ready() -> void:
 	var expedition_button = button(self, "五域游历 / 主线", open_story)
 	expedition_button.position = Vector2(16, 704)
 	expedition_button.size.x = 276
+	var guide_button = button(self, "新手指引 / 下一步  →", open_beginner_guide)
+	guide_button.position = Vector2(16, 770)
+	guide_button.size.x = 276
 	var args = OS.get_cmdline_user_args()
 	if "--skip-intro" not in args and "--preview" not in args:
 		open_game_entry.call_deferred()
@@ -711,6 +714,36 @@ func open_health_entry() -> void:
 	health_entry.game = game
 	health_entry.ui = self
 	add_child(health_entry)
+
+func open_beginner_guide() -> void:
+	if require_family():
+		return
+	var state = game.state
+	var content := _dialog("新手指引 · 第一段旅程", "从领取装备到完成首战，按下面的顺序体验。随时可从左侧重新打开。")
+	var pulled: bool = int(state.equipment.get("starter_ten_pulls", 0)) == 0 and state.equipment.get("inventory", []).size() > 0
+	var equipped: bool = state.equipment.get("equipped", {}).size() > 0
+	var won: bool = state.cleared_bosses.size() > 0 or state.cleared_stages.size() > 0
+	var steps = [
+		{"done": pulled, "title": "领取第一批装备", "detail": "打开聚宝阁，使用新手免费十连；抽到的物品会进入行囊。", "action": "去聚宝阁", "callback": open_treasure.bind("wish")},
+		{"done": equipped, "title": "穿上装备", "detail": "进入行囊，点开刚得到的装备并穿戴；装备属性会用于之后的战斗。", "action": "打开行囊", "callback": open_treasure.bind("bag")},
+		{"done": won, "title": "完成第一次挑战", "detail": "从五域游历进入主线，选择开放的第一关并完成战斗。", "action": "进入主线", "callback": open_story}
+	]
+	var next_step := -1
+	for i in range(steps.size()):
+		if not steps[i].done and next_step == -1:
+			next_step = i
+	var summary := "第一段旅程已完成，可以继续探索。" if next_step == -1 else "当前目标：%s" % steps[next_step].title
+	label_into(content, summary, 23)
+	for i in range(steps.size()):
+		var step: Dictionary = steps[i]
+		label_into(content, "%s %d. %s" % ["✓" if step.done else "→" if i == next_step else "○", i + 1, step.title], 20)
+		paragraph(content, step.detail, 17)
+		if i == next_step:
+			button(content, step.action + " →", step.callback, true)
+	if next_step == -1:
+		paragraph(content, "接下来可以查看今日计划：了解家人的记录如何连接到角色成长。此项由你自主体验，不计入首段通关。", 17)
+		button(content, "查看今日计划 →", open_record)
+	paragraph(content, "完成操作后再次打开指引，进度会从当前角色的装备与通关记录更新。", 16)
 
 func open_home() -> void:
 	if require_family():

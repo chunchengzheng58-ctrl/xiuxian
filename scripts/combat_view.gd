@@ -258,6 +258,7 @@ func _build_hud() -> void:
 	_skill_row.add_theme_constant_override("separation", 10)
 	add_child(_skill_row)
 	basic_button = ui.button(_skill_row, "普攻 [J]\n近身命中 · 灵力 +5", basic_attack)
+	basic_button.tooltip_text = "靠近敌人连续普攻；命中恢复灵力，第三击完成一轮连招。"
 	basic_button.custom_minimum_size = Vector2(210, 86)
 	basic_button.add_theme_font_size_override("font_size", 16)
 	for i in range(4):
@@ -265,6 +266,7 @@ func _build_hud() -> void:
 		var button = ui.button(_skill_row, "", func(): use_skill(choice), i == 0)
 		button.custom_minimum_size = Vector2(220, 86)
 		button.add_theme_font_size_override("font_size", 16)
+		button.tooltip_text = ["听风剑诀：消耗灵力攻击，先普攻回灵再施放。", "踏云步：消耗体力闪避红色预警，精准闪避可充能。", "云罡护体：消耗灵力抵挡伤害，挡下攻击后可反击。", "饕餮归元：受伤后恢复生命并净化，首通两关解锁。"][i]
 		skill_nodes.append(button)
 	ult_button = ui.button(_skill_row, "赤霄剑域 [5/T]\n剑意 0%", use_ultimate)
 	ult_button.custom_minimum_size = Vector2(240, 86)

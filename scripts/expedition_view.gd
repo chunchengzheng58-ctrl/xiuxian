@@ -10,6 +10,7 @@ const StoryScenePlayer = preload("res://scripts/story_scene_player.gd")
 const StoryProp = preload("res://scripts/story_prop.gd")
 const STORY_BOSSES = ["b00", "b03", "b12", "b15", "b19"]
 const ACTION_NAMES = ["普攻 [J]", "听风剑诀 [1]", "踏云步 [2]", "云罡护体 [3]", "饕餮归元 [4]"]
+const ACTION_HELP = ["靠近敌人连续普攻；命中可恢复灵力。", "消耗灵力造成伤害；普攻回灵后再用。", "消耗体力闪避红色预警区域。", "消耗灵力抵挡攻击，适合躲不开时使用。", "消耗灵力恢复生命；受伤后再用。"]
 const TOUCH_ORDER = [1, 2, 4, 3, 5]
 const END_REASONS = {"knockout": "本场战斗结束", "time": "探索时间已到", "disconnect": "连接中断超时", "absent": "入场等待超时", "withdrawn": "已离开秘境", "forfeit": "已退出挑战", "interrupted": "服务中断，本场未结算奖励", "unavailable": "角色状态已变化"}
 const TACTICS = {
@@ -162,8 +163,9 @@ func build_hud() -> void:
 		button.position = Vector2(25 + index * 282, 781)
 		button.size = Vector2(267, 68)
 		button.z_index = 10
+		button.tooltip_text = ACTION_HELP[index]
 		action_buttons.append(button)
-	keyboard_hint = ui.label_into(self, "WASD 移动 · J 普攻 · 1 剑诀 · 2 / 空格 踏云 · 3 / K 护体 · 4 / R 归元 · Esc 离开", 18, Color("fff1cc"))
+	keyboard_hint = ui.label_into(self, "WASD 移动 · J 连续普攻回灵 → 1 剑诀输出 · 红圈用 2/空格 闪避 · 3/K 护体 · 4/R 归元", 18, Color("fff1cc"))
 	keyboard_hint.position = Vector2(95, 862)
 	outline(keyboard_hint)
 

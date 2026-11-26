@@ -169,7 +169,7 @@ func _build_hud() -> void:
 	var title = ui.label_into(row, "问道长廊 · 二十祟兽", 32, Color("f3d19a"))
 	title.add_theme_font_override("font", game.title_font)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ui.button(row, "前往下一位", focus_next_boss)
+	ui.button(row, "回到可挑战入口", focus_next_boss)
 	ui.button(row, "返回仙村 ×", ui.close_modal)
 	progress_label = ui.label_into(header, "", 17, Color("eee0c4"))
 	var regions = HBoxContainer.new()
@@ -272,14 +272,20 @@ func _update_camera() -> void:
 	nearest_index = clampi(roundi((player_position.x - FIRST_GATE) / GATE_SPACING), 0, 19)
 	var entry = Catalogue.at(nearest_index)
 	var unlocked: bool = game.state.boss_unlocked(entry.id)
+	var target_index := 19
+	for row in Catalogue.all():
+		if game.state.boss_unlocked(row.id) and not game.state.boss_cleared(row.id):
+			target_index = int(row.index)
+			break
+	var direction_hint := "当前目标就在附近" if target_index == nearest_index else "目标在右侧 →" if target_index > nearest_index else "← 目标在左侧"
 	var prompt := ""
 	if not unlocked:
-		prompt = "未解锁 · 先通关第 %02d 关" % nearest_index
+		prompt = "此门未解锁 · 点击上方「回到可挑战入口」"
 	elif absf(player_position.x - gate_x(nearest_index)) < 220:
 		prompt = "按 E 进入"
 	else:
 		prompt = "继续沿长廊前行"
-	focus_label.text = "附近：%02d · %s  /  %s    %s" % [nearest_index + 1, _display_name(entry), entry.arena, prompt]
+	focus_label.text = "目标第 %02d 关 · %s  |  附近第 %02d 关 · %s  |  %s" % [target_index + 1, direction_hint, nearest_index + 1, _display_name(entry), prompt]
 	var story := str(entry.get("story", ""))
 	story_label.visible = not story.is_empty()
 	if story_label.visible:
