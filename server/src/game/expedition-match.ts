@@ -107,13 +107,13 @@ export class ExpeditionMatch {
   private hurtUntil = 0;
   result: ExpeditionResult | null = null;
 
-  constructor(readonly stageId: ExpeditionStageId, stats: FighterStats, waitingTicks = 1125) {
+  constructor(readonly stageId: ExpeditionStageId, stats: FighterStats & { wearable_move?: number; wearable_regen?: number }, waitingTicks = 1125) {
     const stage = campaignConfig.stages.find(row => row.stage_id === stageId);
     if (!stage || !definitions.bosses[stageId]) throw new Error('Unknown expedition stage');
     this.definition = definitions.bosses[stageId];
     this.arena = new ArenaMatch(waitingTicks, {
       stats: [stats, { life: stage.battle.life, spirit: 100, stamina: 100, attack: stage.battle.attack, defense: 0 }],
-      fightSeconds: 180, reconnectSeconds: 15,
+      fightSeconds: 180, reconnectSeconds: 15, pveMovement: stats.wearable_move, pveRegeneration: stats.wearable_regen,
     });
     this.arena.connect(1, true);
   }

@@ -23,7 +23,7 @@ const opposite = (seat: Seat): Seat => seat === 0 ? 1 : 0;
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 export type FighterStats = { life: number; spirit: number; stamina: number; attack: number; defense: number };
-type ArenaOptions = { stats?: [FighterStats, FighterStats]; fightSeconds?: number; reconnectSeconds?: number; practiceStyle?: number };
+type ArenaOptions = { stats?: [FighterStats, FighterStats]; fightSeconds?: number; reconnectSeconds?: number; practiceStyle?: number; pveMovement?: number; pveRegeneration?: number };
 const practiceStyles = [
   { pace: .57, hesitation: 7, attackDelay: 35, turn: 1 },
   { pace: .64, hesitation: 5, attackDelay: 38, turn: -1 },
@@ -50,10 +50,14 @@ export class ArenaMatch {
   private remaining = fightTicks;
   private reconnect = reconnectTicks;
   private readonly practice: typeof practiceStyles[number] | undefined;
+  private pveMovement = 0;
+  private pveRegeneration = 0;
   private botNextMove = 0;
   private botNextAttack = 0;
 
   constructor(private waiting: number, options: ArenaOptions = {}) {
+    this.pveMovement = Math.min(.03, Math.max(0, options.pveMovement ?? 0));
+    this.pveRegeneration = Math.min(.04, Math.max(0, options.pveRegeneration ?? 0));
     this.fighters = [fighter(520, 1, options.stats?.[0]), fighter(920, -1, options.stats?.[1])];
     this.practice = options.practiceStyle === undefined ? undefined : practiceStyles[options.practiceStyle];
     if (this.practice) {
@@ -167,7 +171,7 @@ export class ArenaMatch {
 
   private move(player: Fighter) {
     player.mp = Math.min(player.maxMp, player.mp + 0.28);
-    player.stamina = Math.min(player.maxStamina, player.stamina + 0.6);
+    player.stamina = Math.min(player.maxStamina, player.stamina + 0.6 * (1 + (player === this.fighters[0] ? this.pveRegeneration : 0)));
     player.poseTime = Math.max(0, player.poseTime - 1);
     player.hit = Math.max(0, player.hit - 1);
     if (player.shieldTime > 0 && --player.shieldTime === 0) player.shield = 0;
@@ -185,8 +189,8 @@ export class ArenaMatch {
       this.activate(player, action);
     }
     const speed = player.heal > 0 ? speeds.walk * 0.3 : player.windup > 0 ? speeds.walk * 0.65 : speeds.walk;
-    player.x += player.dash > 0 ? player.fx * speeds.dash : player.moveX * speed;
-    player.y += player.dash > 0 ? player.fy * speeds.dash : player.moveY * speed;
+    player.x += player.dash > 0 ? player.fx * speeds.dash : player.moveX * speed * (1 + (player === this.fighters[0] ? this.pveMovement : 0));
+    player.y += player.dash > 0 ? player.fy * speeds.dash : player.moveY * speed * (1 + (player === this.fighters[0] ? this.pveMovement : 0));
     this.clampPlayer(player);
   }
 

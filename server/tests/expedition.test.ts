@@ -279,14 +279,14 @@ test('v7存档迁移最新版保留余额、流派强化装备、账号会话与
   const raw = new DatabaseSync(path);
   const arenaV6 = Array.from(readFileSync(join(repositoryRoot, 'server/src/database.ts'), 'utf8')
     .matchAll(/String\.raw`([\s\S]*?)`/g), match => match[1]!)[5]!;
-  raw.exec(`DROP TABLE world_boss_contributions; DROP TABLE world_bosses; DROP TABLE world_messages; DROP TABLE pvp_matches; DROP TABLE community_reactions; DROP TABLE community_comments; DROP TABLE community_posts; DROP TABLE community_members; DROP TABLE communities; DROP TABLE account_play_days; DROP TABLE story_nodes; DROP TABLE adventure_awards;
+  raw.exec(`DROP TABLE wearable_days; DROP TABLE wearable_visibility; DROP TABLE world_boss_contributions; DROP TABLE world_bosses; DROP TABLE world_messages; DROP TABLE pvp_matches; DROP TABLE community_reactions; DROP TABLE community_comments; DROP TABLE community_posts; DROP TABLE community_members; DROP TABLE communities; DROP TABLE account_play_days; DROP TABLE story_nodes; DROP TABLE adventure_awards;
     DROP TABLE arena_duels; DROP TABLE arena_queue; DROP TABLE arena_ratings;
     DROP TABLE expedition_clears; DROP TABLE expedition_runs; DELETE FROM schema_migrations WHERE version >= 8; PRAGMA user_version = 7;`);
   raw.exec(arenaV6);
   raw.close();
   const migrated = await buildApp(options);
   try {
-    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 13);
+    assert.equal(migrated.db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, 14);
     assert.equal(migrated.auth.authenticate(`Bearer ${login.token}`).account_id, account.account_id);
     assert.deepEqual(migrated.game.characterSnapshot(account.account_id, actor), before);
     assert.deepEqual(migrated.db.all('SELECT * FROM ledger ORDER BY rowid'), ledger);

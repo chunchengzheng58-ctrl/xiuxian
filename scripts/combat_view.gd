@@ -23,6 +23,7 @@ var ui: Control
 var mode: String = "boss"
 var support: int = 0
 var entered_state: RefCounted
+var wearable_effects: Dictionary = {}
 var rules: RefCounted
 var hero_outline: Sprite2D
 var hero: Sprite2D
@@ -109,9 +110,18 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	encounter = Catalogue.entry(boss_id) if boss_id != "" else {}
 	entered_state = game.state
+	if entered_state.is_remote() and mode != "practice":
+		var response = await game.account_api.api.request_api("/api/v2/wearables/status", HTTPClient.METHOD_POST, {"cultivator_id": entered_state.cultivator_id})
+		if not is_inside_tree() or game.state != entered_state:
+			return
+		if response.ok:
+			wearable_effects = response.data.effects
 	if entered_state.is_remote() and mode != "practice" and boss_id != "":
 		_open_remote_session()
 	rules = BossRules.new(entered_state, 0, game.state.selected_tier, game.state.selected_track, mode == "practice", encounter)
+	rules.wearable_regeneration = float(wearable_effects.get("regeneration", 0))
+	var resistance := 100.0 / float(rules.stats.damage_multiplier) - 100.0
+	rules.stats.damage_multiplier = 100.0 / (100.0 + resistance * (1.0 + float(wearable_effects.get("defense", 0))))
 	heal_was_unlocked = entered_state.heal_unlocked()
 	var background = TextureRect.new()
 	background.texture = Assets.texture(encounter.get("background", "res://assets/gameplay/boss-stage.png"))
@@ -565,6 +575,8 @@ func floating(text: String, at: Vector2, color: Color = Color("c8f3d6")) -> void
 	tween.chain().tween_callback(popup.queue_free)
 
 func _process(delta: float) -> void:
+	if rules == null:
+		return
 	if _settings_open():
 		return
 	if game.state != entered_state or not entered_state.allows_battle():
@@ -641,7 +653,7 @@ func _process(delta: float) -> void:
 				movement *= .65
 			if rules.slow_time > 0.0:
 				movement *= .62
-			hero.position += direction*255*delta*movement
+			hero.position += direction*255*delta*movement*(1.0 + float(wearable_effects.get("movement", 0)))
 		_clamp_hero()
 		var shield_before: int = rules.shield_hp
 		var was_airborne: bool = rules.airborne_time > 0.0
@@ -687,6 +699,8 @@ func _clamp_hero() -> void:
 	hero.position.y = clampf(hero.position.y, 458, 680)
 
 func _input(event: InputEvent) -> void:
+	if rules == null:
+		return
 	if _settings_open():
 		return
 	if not event is InputEventKey or not event.pressed or event.echo:

@@ -143,6 +143,7 @@ func open_social() -> void:
 	if require_family() or not can_change_family():
 		return
 	var content := _dialog("同道录", "用独立的社交昵称结识同道。交换邀请码后，由对方确认好友申请。")
+	button(content, "神遁榜 · 全服 / 好友", open_shendun_board)
 	if not game.state.is_remote() or not game.account_api.is_authenticated() or game.state.family_member_id != "self":
 		paragraph(content, "登录游戏账号并切换到本人角色后，即可使用同道录。", 20)
 		return
@@ -506,14 +507,21 @@ func open_wechat_tasks() -> void:
 
 func open_ptds_record() -> void:
 	var state = game.state
-	var content = _dialog("PTDS 穿戴摘要", "仅本人可确认当天记录。步数和睡眠时长在本机预览。")
-	var preview = paragraph(content, "请选择本人从 PTDS 导出的 JSON。", 20, BROWN)
-	var selection := {"date": "", "busy": false}
+	var content = _dialog("PTDS 穿戴修行", "仅本人确认当天数据。原始生理指标只在本机预览，PVP 不受影响。")
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = 240
+	content.add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
+	var preview = paragraph(box, "请选择本人从 PTDS 导出的 JSON。", 18, BROWN)
+	var selection := {"date": "", "busy": false, "revision": -1, "summary": {}}
 	var controls := {}
 	var accept_summary := func(summary: Dictionary):
 		preview.text = summary.message
 		selection.date = summary.get("date", "")
-		controls.confirm.disabled = selection.date != state.today()
+		selection.summary = summary
+		controls.confirm.disabled = selection.date != state.today() or selection.revision < 0
 	var picker := FileDialog.new()
 	picker.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	picker.access = FileDialog.ACCESS_FILESYSTEM
@@ -536,21 +544,105 @@ func open_ptds_record() -> void:
 		if selection.busy or selection.date != state.today() or game.state != state:
 			return
 		selection.busy = true
-		var result = await game.account_api.api.request_api("/api/v2/ptds/confirm", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id, "date": selection.date})
+		controls.confirm.disabled = true
+		var body: Dictionary = selection.summary.duplicate()
+		body.erase("message")
+		body.merge({"cultivator_id": state.cultivator_id, "rule": "wearable-v1", "expected_revision": selection.revision})
+		var result = await game.account_api.api.request_api("/api/v2/wearables/confirm", HTTPClient.METHOD_POST, body)
 		selection.busy = false
 		if result.ok:
 			await game.account_api.sync_family(game.family)
 			refresh()
 		if not is_instance_valid(preview) or game.state != state:
 			return
-		preview.text = "今日 PTDS 记录已确认。重复确认不会再次结算。" if result.ok else str(result.message)
+		preview.text = "今日穿戴修行已确认。神遁距离已覆盖更新；每日奖励不重复发放，属性保持首次确认档位。可在神遁榜选择公开范围。" if result.ok else str(result.message)
+		controls.confirm.disabled = false
 		if result.ok:
 			selection.date = ""
 			controls.confirm.disabled = true
 	, true)
 	controls.confirm = confirm
 	confirm.disabled = true
+	button(content, "神遁榜 / 设置公开范围", open_shendun_board)
 	button(content, "返回每日修行", open_record)
+	var status = await game.account_api.api.request_api("/api/v2/wearables/status", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id})
+	if not is_instance_valid(preview) or game.state != state:
+		return
+	if status.ok:
+		selection.revision = int(status.data.revision)
+		controls.confirm.disabled = selection.date != state.today()
+	else:
+		preview.text = str(status.message)
+
+
+func open_shendun_board(scope: String = "global", period: String = "day", offset: int = 0) -> void:
+	var state = game.state
+	var content = _dialog("神遁榜", "1 步＝1 丈 · 按遁行距离排序 · 本人确认记录，不代表硬件认证")
+	if not state.is_remote() or state.family_member_id != "self":
+		paragraph(content, "登录并切换到本人角色后查看全服和好友神遁榜。", 20)
+		return
+	var tabs := HBoxContainer.new()
+	content.add_child(tabs)
+	button(tabs, "全服榜", func(): open_shendun_board("global", period), scope == "global")
+	button(tabs, "好友榜", func(): open_shendun_board("friends", period), scope == "friends")
+	button(tabs, "今日", func(): open_shendun_board(scope, "day"), period == "day")
+	button(tabs, "本周", func(): open_shendun_board(scope, "week"), period == "week")
+	var summary = paragraph(content, "正在读取…", 18)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = 235
+	content.add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
+	var rows = paragraph(box, "", 19, BROWN)
+	paragraph(content, "公开距离可按固定比例反推出步数。默认不公开，以下选择会立即生效。", 16)
+	var visibility := HBoxContainer.new()
+	content.add_child(visibility)
+	var feedback = paragraph(content, "", 16)
+	for item in [["不公开", "private"], ["仅好友可见", "friends"], ["全服及好友可见", "public"]]:
+		var label: String = item[0]
+		var value: String = item[1]
+		button(visibility, label, func():
+			var response = await game.account_api.api.request_api("/api/v2/wearables/visibility", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id, "visibility": value})
+			if not is_instance_valid(feedback) or game.state != state:
+				return
+			if response.ok:
+				open_shendun_board(scope, period)
+			else:
+				feedback.text = str(response.message)
+		)
+	var actions := HBoxContainer.new()
+	content.add_child(actions)
+	button(actions, "导入今日穿戴数据", open_ptds_record, true)
+	button(actions, "撤回今日记录", func():
+		var response = await game.account_api.api.request_api("/api/v2/wearables/withdraw", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id})
+		if is_instance_valid(feedback) and game.state == state:
+			if response.ok:
+				open_shendun_board(scope, period)
+			else:
+				feedback.text = str(response.message)
+	)
+	var result = await game.account_api.api.request_api("/api/v2/wearables/leaderboard", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id, "scope": scope, "period": period, "offset": offset})
+	if not is_instance_valid(rows) or game.state != state:
+		return
+	if not result.ok:
+		rows.text = str(result.message)
+		return
+	var data: Dictionary = result.data
+	var own: Dictionary = data.get("self", {})
+	summary.text = "%s 至 %s · 我的遁行：%s 丈 · 名次：%s" % [data.from, data.to, str(own.get("distance_zhang", "未确认")), str(own.get("rank", "未上榜"))]
+	var lines := PackedStringArray()
+	for entry in data.entries:
+		lines.append("第 %d 名　%s%s　遁行 %d 丈" % [entry.rank, entry.alias, "（我）" if entry.is_self else "", entry.distance_zhang])
+	rows.text = "\n".join(lines) if not lines.is_empty() else "暂无公开成绩。导入本人今日步数后，可选择参与神遁榜。"
+	if offset > 0:
+		button(actions, "上一页", func(): open_shendun_board(scope, period, maxi(0, offset - 50)))
+	if data.has_more:
+		button(actions, "下一页", func(): open_shendun_board(scope, period, offset + 50))
+	var status = await game.account_api.api.request_api("/api/v2/wearables/status", HTTPClient.METHOD_POST, {"cultivator_id": state.cultivator_id})
+	if is_instance_valid(feedback) and game.state == state and status.ok:
+		var effect: Dictionary = status.data.effects
+		feedback.text = "当前公开范围：%s · 今日 PVE：轻身 +%s%% / 回气 +%s%% / 护体 +%s%%" % [{"private": "不公开", "friends": "仅好友", "public": "全服及好友"}.get(status.data.visibility, "不公开"), str(float(effect.movement) * 100), str(float(effect.regeneration) * 100), str(float(effect.defense) * 100)]
 
 
 func refresh_wechat_tasks(state) -> void:
@@ -584,8 +676,8 @@ func bind_wechat(state) -> void:
 		toast(str(invite.message))
 		return
 	var health_url = OS.get_environment("XIUXIAN_WECHAT_URL").strip_edges().trim_suffix("/")
-	if health_url.is_empty():
-		health_url = game.account_api.service_url if OS.has_feature("web") else "http://127.0.0.1:8000"
+	if health_url.is_empty() or OS.has_feature("official_client"):
+		health_url = game.account_api.service_url if OS.has_feature("web") or OS.has_feature("official_client") else "http://127.0.0.1:8000"
 	var request = HTTPRequest.new()
 	request.timeout = 15
 	add_child(request)

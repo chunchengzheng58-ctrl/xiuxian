@@ -61,8 +61,11 @@ var token: String:
 		return api.bearer_token if is_instance_valid(api) else ""
 
 func _ready() -> void:
+	if OS.has_feature("official_client"):
+		service_url = "https://madxiuxian.com"
+		allow_autostart = false
 	for name in ["XIUXIAN_BACKEND_URL", "XIUXIAN_ACCOUNT_URL"]:
-		if OS.has_environment(name):
+		if not OS.has_feature("official_client") and OS.has_environment(name):
 			service_url = OS.get_environment(name)
 			break
 	local_service_url = service_url
@@ -74,7 +77,7 @@ func _ready() -> void:
 	else:
 		var options := get_node_or_null("/root/GameOptions")
 		var override: String = str(options.get_value("server_url", "")) if options != null else ""
-		if not override.is_empty() and endpoint_allowed(override):
+		if not OS.has_feature("official_client") and not override.is_empty() and endpoint_allowed(override):
 			service_url = override
 	api = GameApi.new()
 	api.name = "GameApi"

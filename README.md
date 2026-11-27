@@ -2,9 +2,9 @@
 
 一款以像素仙村为起点的修仙 RPG。创建自己的修士，闯秘境、练招式、养装备，也可以组队探索、与好友论剑，或者参加公开匹配冲击榜单。项目由 Godot 客户端和独立游戏服务端组成。
 
-[官网直接玩](https://madxiuxian.com/) · [Windows x64 下载](https://madxiuxian.com/downloads/xiuxian-full-ptds-ebb291d-windows-x64.zip)
+[官网直接玩](https://madxiuxian.com/) · [Windows x64 下载](https://madxiuxian.com/downloads/xiuxian-20261127-shendun-v1-windows-x64.zip)
 
-登录后从「每日修行 → PTDS 穿戴摘要」确认当天记录。接入方法见 [PTDS 指南](docs/PTDS.md)。社群功能见 [社群说明](docs/SOCIAL_SYSTEM.md)。
+网页及 Windows 正式版统一版本为 `2026.11.27-shendun-v1`，共用官网正式服务器与同一账号的角色、好友和神遁榜。Windows 解压后直接运行 `Xiuxian.exe`，无需安装 Node.js 或另配 API。登录本人角色后，从「同道录 → 神遁榜」导入并确认当天记录；1 步＝1 丈，提供全服 / 好友与今日 / 本周榜。公开范围默认关闭，转换后的距离可反推步数。接入方法见 [PTDS 指南](docs/PTDS.md)。社群功能见 [社群说明](docs/SOCIAL_SYSTEM.md)。
 
 本 README 对应当前源码开发版。启动脚本会加载它所在目录的项目；已打开的旧窗口、已导出的客户端和网页部署不会自动变成此版本。试玩步骤见 [新版试玩指南](docs/PLAYTEST_GUIDE.md)，交付前仍需完成的验证见 [发布核对](docs/RELEASE_READINESS.md)。
 

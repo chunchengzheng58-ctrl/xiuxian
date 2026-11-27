@@ -58,7 +58,7 @@ var fill_mode: OptionButton
 func _ready() -> void:
 	target_state = game.state
 	# 网页版：健康入口经游戏服务同源代理，浏览器不直连其他端口。
-	if OS.has_feature("web"):
+	if OS.has_feature("web") or OS.has_feature("official_client"):
 		service_url = game.account_api.service_url
 	bound_member_id = target_state.family_member_id
 	bound_family = game.family
@@ -357,7 +357,7 @@ func probe_completed(result: int, code: int, _headers: PackedStringArray, body: 
 	if disposed or probe_service_url != service_url:
 		return
 	if result != HTTPRequest.RESULT_SUCCESS:
-		if not tried_start and not OS.has_feature("web"):
+		if not tried_start and not OS.has_feature("web") and not OS.has_feature("official_client"):
 			tried_start = true
 			var server_path = ProjectSettings.globalize_path("res://health-entry/server.py")
 			var python = OS.get_environment("XIUXIAN_HEALTH_PYTHON")

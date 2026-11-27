@@ -440,6 +440,21 @@ INSERT OR IGNORE INTO account_play_days (account_id, day)
     UNION ALL SELECT challenger_id, created_at FROM arena_duels WHERE status = 'finished'
     UNION ALL SELECT opponent_id, created_at FROM arena_duels WHERE status = 'finished' AND opponent_id IS NOT NULL
   ) play JOIN cultivators c ON c.id = play.cultivator_id;
+`, String.raw`
+-- 14: Confirmed game projections only; no raw physiological readings.
+CREATE TABLE wearable_days (
+  cultivator_id TEXT NOT NULL REFERENCES cultivators(id), day TEXT NOT NULL,
+  source TEXT NOT NULL, distance_zhang INTEGER CHECK(distance_zhang BETWEEN 0 AND 1000000),
+  movement_tier INTEGER NOT NULL CHECK(movement_tier BETWEEN 0 AND 3),
+  sleep_tier INTEGER NOT NULL CHECK(sleep_tier BETWEEN 0 AND 3),
+  revision INTEGER NOT NULL CHECK(revision > 0), withdrawn INTEGER NOT NULL CHECK(withdrawn IN (0,1)),
+  PRIMARY KEY(cultivator_id, day)
+);
+CREATE INDEX wearable_period ON wearable_days(day, withdrawn);
+CREATE TABLE wearable_visibility (
+  cultivator_id TEXT PRIMARY KEY REFERENCES cultivators(id),
+  visibility TEXT NOT NULL CHECK(visibility IN ('private','friends','public'))
+);
 `];
 
 export class Database {

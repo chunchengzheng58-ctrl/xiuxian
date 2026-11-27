@@ -77,6 +77,7 @@ var boss_name: String = "云海妖龙"
 var boss_position: Vector2 = BOSS_POSITION
 var practice: bool = false
 var state: RefCounted
+var wearable_regeneration: float = 0.0
 var stats: Dictionary
 var hp: int
 var max_hp: int
@@ -453,7 +454,7 @@ func _step_once(delta: float, player_position: Vector2) -> Dictionary:
 	dodge_time = maxf(0, dodge_time - delta)
 	var regeneration_time = maxf(0, delta - stamina_delay)
 	stamina_delay = maxf(0, stamina_delay - delta)
-	stamina = minf(max_stamina, stamina + regeneration_time * 18)
+	stamina = minf(max_stamina, stamina + regeneration_time * 18 * (1.0 + clampf(wearable_regeneration, 0.0, 0.04)))
 	var healed = 0
 	if heal_cast > 0:
 		heal_cast = maxf(0, heal_cast - delta)

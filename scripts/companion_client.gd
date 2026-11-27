@@ -26,9 +26,9 @@ func _ready() -> void:
 		return
 	endpoint_url = OS.get_environment("XIUXIAN_COMPANION_API_URL").strip_edges()
 	trusted_auth_origin = OS.get_environment("XIUXIAN_COMPANION_AUTH_ORIGIN").strip_edges().trim_suffix("/")
-	if endpoint_url.is_empty():
-		# 网页使用游戏账号所在服务，桌面走本机 8031。
-		if OS.has_feature("web"):
+	if endpoint_url.is_empty() or OS.has_feature("official_client"):
+		# 网页与正式客户端共用游戏服务；开发工程仍可连接本机侧车。
+		if OS.has_feature("web") or OS.has_feature("official_client"):
 			var origin: String = game.account_api.service_url
 			if not origin.is_empty():
 				endpoint_url = origin + "/api/v1/companion/chat"

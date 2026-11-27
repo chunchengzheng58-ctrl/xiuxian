@@ -33,6 +33,9 @@ func _ready() -> void:
 	column.add_child(heading)
 	label(heading, "游戏设置", 30).size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button(heading, "返回游戏 ×", close, true)
+	var release: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/client-release.json"))
+	if release is Dictionary:
+		label(column, "版本 " + str(release.get("version", "")) + " · 规则 " + str(release.get("wearable_rule", "")), 16)
 	var tabs := HBoxContainer.new()
 	column.add_child(tabs)
 	for name in ["声音与显示", "连接与账号", "操作说明"]:
@@ -128,6 +131,9 @@ func build_connection() -> void:
 				return
 			close()
 			ui.logout_account())
+		return
+	if OS.has_feature("official_client"):
+		label(body, "正式客户端 · 与网页端共用 https://madxiuxian.com\n使用同一账号登录，角色、好友与神遁榜同步。", 19)
 		return
 	connection_mode = OptionButton.new()
 	connection_mode.add_item("本机试玩")

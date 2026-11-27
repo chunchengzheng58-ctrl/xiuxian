@@ -1,3 +1,4 @@
+import { wearableEffects } from '../integration/wearables.js';
 import { type Clock, id, requireCondition } from '../core.js';
 import { Database } from '../database.js';
 import { equipmentBonuses, type GrowingEquipment } from './equipment-growth.js';
@@ -77,7 +78,9 @@ export class ExpeditionService {
     const bonus = equipmentBonuses(this.db.all<GrowingEquipment>('SELECT * FROM equipment WHERE cultivator_id = ? AND salvaged_at IS NULL AND equipped = 1', actor.id));
     const stats: FighterStats = { life: base.life + bonus.life, attack: base.attack + bonus.attack, defense: base.defense + bonus.defense,
       spirit: base.spirit + bonus.spirit, stamina: base.stamina + bonus.stamina };
-    return { base_stats: base, equipment_bonuses: bonus, stats };
+    const wearable = wearableEffects(this.db, actor.id, this.now());
+    stats.defense *= 1 + wearable.defense;
+    return { base_stats: base, equipment_bonuses: bonus, stats: { ...stats, ...(wearable.movement || wearable.regeneration ? { wearable_move: wearable.movement, wearable_regen: wearable.regeneration } : {}) } };
   }
 
   leave(actor: Character, runId: string) {

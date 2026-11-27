@@ -16,6 +16,7 @@ import { Outbox } from './integration/outbox.js';
 import { RealtimeHub } from './realtime/hub.js';
 import { type WebOptions, registerWeb } from './web.js';
 import { SocialService } from './social/service.js';
+import { Wearables, type WearableInput } from './integration/wearables.js';
 
 export const healthScopes = ['binding:confirm', 'binding:connection', 'task:read', 'task:assign', 'submission:write', 'result:write', 'notification:deliver', 'baseline:write'] as const;
 export type ServiceCredential = { id: string; token: string; scopes: string[] };
@@ -39,6 +40,7 @@ export async function buildApp(options: AppOptions = {}) {
   const game = new GameService(db, now, options.providers ?? defaultProviders, options.randomInt ?? randomInt, options.calendar, { ...options.extensions, commands: { ...options.extensions?.commands, ...social.commands() } });
   const bindings = new BindingService(db, now, game);
   const health = new HealthBridge(db, now, game, bindings, options.beforeSettlementCommit);
+  const wearables = new Wearables(db, now, game, health);
   const outbox = new Outbox(db, now, bindings);
   const realtime = new RealtimeHub(db, now, auth, game);
   let worker: NodeJS.Timeout | undefined;
@@ -97,6 +99,24 @@ export async function buildApp(options: AppOptions = {}) {
       db.run('INSERT OR IGNORE INTO account_play_days (account_id, day) VALUES (?, ?)', accountId, dayKey(now()));
       return db.get<{ play_days: number }>('SELECT COUNT(*) AS play_days FROM account_play_days WHERE account_id = ?', accountId)!;
     }));
+  });
+  const wearableOwner = { cultivator_id: stringField };
+  app.post('/api/v2/wearables/status', { schema: routeSchema('game', '本人穿戴加成与公开范围', objectSchema(wearableOwner)) }, async request => success(wearables.status(session(request).account_id, (request.body as { cultivator_id: string }).cultivator_id)));
+  app.post('/api/v2/wearables/confirm', { config: { rateLimit: { max: 12, timeWindow: '1 minute' } }, schema: routeSchema('game', '本人确认游戏档位与遁行距离；原始生理数据不得上传', objectSchema({ ...wearableOwner,
+    rule: { const: 'wearable-v1', type: 'string' }, date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    source: enumField(['oura', 'garmin', 'somaloop', 'whoop', 'xiaomi', 'generic']),
+    distance_zhang: { type: ['integer', 'null'], minimum: 0, maximum: 1000000 },
+    movement_tier: { type: 'integer', minimum: 0, maximum: 3 }, sleep_tier: { type: 'integer', minimum: 0, maximum: 3 },
+    expected_revision: { type: 'integer', minimum: 0, maximum: 2147483647 },
+  })) }, async request => success(wearables.confirm(session(request).account_id, request.body as WearableInput)));
+  app.post('/api/v2/wearables/visibility', { schema: routeSchema('game', '本人选择神遁榜公开范围', objectSchema({ ...wearableOwner, visibility: enumField(['private', 'friends', 'public']) })) }, async request => {
+    const body = request.body as { cultivator_id: string; visibility: string };
+    return success(wearables.visibility(session(request).account_id, body.cultivator_id, body.visibility));
+  });
+  app.post('/api/v2/wearables/withdraw', { schema: routeSchema('game', '撤回今日加成与成绩，保留每日防重复凭据', objectSchema(wearableOwner)) }, async request => success(wearables.withdraw(session(request).account_id, (request.body as { cultivator_id: string }).cultivator_id)));
+  app.post('/api/v2/wearables/leaderboard', { schema: routeSchema('social', '神遁榜；由服务端核对双向好友与公开权限', objectSchema({ ...wearableOwner, scope: enumField(['global', 'friends']), period: enumField(['day', 'week']), offset: { type: 'integer', minimum: 0, maximum: 10000 } })) }, async request => {
+    const body = request.body as { cultivator_id: string; scope: 'global' | 'friends'; period: 'day' | 'week'; offset: number };
+    return success(wearables.board(session(request).account_id, body.cultivator_id, body.scope, body.period, body.offset));
   });
   const communityCreateInput = objectSchema({ name: { type: 'string', minLength: 2, maxLength: 48 }, visibility: enumField(['public', 'friends', 'private']), max_members: { type: 'integer', minimum: 2, maximum: 200 }, request_id: stringField });
   const communityIdParams = { params: objectSchema({ id: stringField }) };
